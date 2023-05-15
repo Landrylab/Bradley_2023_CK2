@@ -1,0 +1,78 @@
+---
+title: "Supplementary_figure_2"
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+
+# Read in data (independent WT peptides)
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+ck2_peptide_library <- read_xlsx('CK2_peptides_library.xlsx', skip=0, col_names=TRUE, sheet=1)
+
+# Keep the WT and mutant peptide data but discard the data pertaining to orthologues
+ck2_peptide_library <- ck2_peptide_library[476:nrow(ck2_peptide_library),]
+ck2_peptide_library <- as.data.frame(ck2_peptide_library)
+
+# WT and mutant peptides
+MSS <- as.numeric(ck2_peptide_library[,4])
+phosphosignal <- as.numeric(ck2_peptide_library[,6])
+
+# Remove NAs
+phosphosignal <- phosphosignal[!is.na(MSS)]
+MSS <- MSS[!is.na(MSS)]
+
+# Exclude 0 values as we need to take logarithms of the phosphorylation signal
+MSS <- MSS[!phosphosignal == 0]
+phosphosignal <- phosphosignal[!phosphosignal == 0]
+
+# Take logs and then plot
+phosphosignal <- log(phosphosignal,base=10)
+
+```
+
+# Use ggplot to generate a plot of the regression
+
+```{r}
+
+library(ggplot2)
+library(ggtext)
+
+hugo_array <- data.frame(MSS,phosphosignal)
+colnames(hugo_array) <- c('MSS','phosphosignal')
+
+p <- ggplot(hugo_array, aes(x=MSS, y=phosphosignal)) + 
+  geom_point()
+
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=8.5,face="plain"),axis.title.y=element_text(size=8.5,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p+theme(legend.position="none")
+p <- p + xlab('Substrate quality') + ylab('log10 (phosphorylation)') + ggtitle('')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p <- p+geom_richtext(x=0.7, y=3.5, label='r<sub>s</sub> = 0.60',size=3.5,fontface='plain',col='black',label.color = NA)
+
+ggsave(file='Supplementary_figure_2.pdf', plot=p, width=5, height=4)
+
+```
+
