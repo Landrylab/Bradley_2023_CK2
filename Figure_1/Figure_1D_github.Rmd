@@ -1,5 +1,5 @@
 ---
-title: "Hugo CK2 array"
+title: "Figure_1D"
 output: html_document
 ---
 
@@ -58,10 +58,8 @@ p <- ggplot(hugo_array, aes(x=MSS, y=phosphosignal)) +
   geom_point()+
   geom_smooth(method=lm)
 
-p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
-
 # Font
-p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
 
 # Ticks
 p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
@@ -70,7 +68,6 @@ p <- p+theme(legend.position="none")
 p <- p + xlab('Substrate quality') + ylab('log10 (phosphorylation)') + ggtitle('')
 p <- p+theme(plot.title = element_text(hjust = 0.5))
 p <- p + theme(panel.border= element_blank())
-#p <- p+geom_text(aes(x=0.65, y=3.5, label='r[s] = 0.51'),size=5.5,fontface='bold',col='black',parse=T, check_overlap=T)
 p <- p+geom_richtext(x=0.65, y=3.5, label='r<sub>s</sub> = 0.51',size=3.5,fontface='plain',col='black',label.color = NA)
 fig_1d <- p
 
