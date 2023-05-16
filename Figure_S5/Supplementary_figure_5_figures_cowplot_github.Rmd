@@ -1,0 +1,588 @@
+---
+title: "Supplementary figure 5 plots/cowplot"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Read in data
+
+```{r}
+
+Ishi_disorder_scaled <- readRDS('Ishi_disorder_CK2_github.rds')
+
+```
+
+
+# Supplementary figure 5A (start by using results from supplementary figure 2)
+
+```{r}
+
+abundance_list <- list()
+col1 <- NULL
+col2 <- NULL
+col3 <- NULL
+
+for (i in 1:9) {
+  
+  lower <- (0.5*i)-1
+  upper <- (0.5*i)-0.5
+  print(lower)
+  print(upper)
+  
+  abundance_stoi <- Ishi_disorder_scaled[Ishi_disorder_scaled[,6] > lower & Ishi_disorder_scaled[,6] <= upper,3]
+  abundance_stoi <- abundance_stoi[!abundance_stoi == 'NaN']
+  abundance_list <- c(abundance_list, list(abundance_stoi))
+  
+  col1 <- c(col1,abundance_stoi)
+  col2 <- c(col2,rep(paste(lower,'-',upper,sep=''),length(abundance_stoi)))
+}
+
+mss_data <- cbind(col1,col2)
+mss_data <- data.frame(mss_data,stringsAsFactors = FALSE)
+mss_data[,1] <- as.numeric(mss_data[,1])
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Stoichiometry','Positions')
+
+p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[132], lwd=1.15, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.1, color=colors()[132],size=0.4) #colors()[258]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("CK2 Stoichiometry") + xlab("Abundance (log10 ppm)") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p + theme(axis.title.x = element_text(vjust=1.5))
+
+p <- p+theme(axis.text=element_text(size=6),axis.title.x=element_text(size=9,face="plain",vjust=4.5),axis.title.y=element_text(size=8,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(panel.border= element_blank())
+p <- p + theme(plot.margin = unit(c(0,0,0.1,0), "cm")) # t, r, b, l
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.0, hjust=1))
+a <- p
+a
+
+```
+
+# Supplementary figure 5B (disorder)
+
+```{r}
+
+Ishi_disorder_scaled$Disorder_class <- factor(Ishi_disorder_scaled$Disorder_class, levels = c('O','D'))
+
+p <- ggplot(Ishi_disorder_scaled, aes(x=Disorder_class, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[132],size=0.4) 
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Disorder") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=9,face="plain"),plot.title=element_text(size=10,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") #  
+p <- p + theme(plot.margin = unit(c(0.2,0,0.1,0), "cm")) # t, r, b, l
+b <- p
+
+b
+
+```
+
+# Supplementary figure 5C (subcellular localisation)
+
+```{r}
+
+Ishi_disorder_scaled$Location <- factor(Ishi_disorder_scaled$Location, levels = c('Other','C','NC','N'))
+
+p <- ggplot(Ishi_disorder_scaled, aes(x=Location, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[132],size=0.4) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Subcellular location") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=9,face="plain"),plot.title=element_text(size=10,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0,0.1,0), "cm")) # t, r, b, l
+c <- p
+
+c
+
+```
+
+# Supplementary figure 5D (interaction number)
+
+```{r}
+
+Ishi_disorder_scaled[Ishi_disorder_scaled$Int_num > 1,8] <- 1
+
+Ishi_disorder_scaled[Ishi_disorder_scaled$Int_num == 0,8] <- 'N'
+Ishi_disorder_scaled[Ishi_disorder_scaled$Int_num == 1,8] <- 'Y'
+
+Ishi_disorder_scaled$Int_num <- factor(Ishi_disorder_scaled$Int_num, levels = c('N','Y'))
+
+p <- ggplot(Ishi_disorder_scaled, aes(x=Int_num, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[132],size=0.4) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Reported interaction") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=9,face="plain"),plot.title=element_text(size=10,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0,0.1,0), "cm")) # t, r, b, l
+d <- p
+
+d
+
+```
+
+# Supplementary figure 5E (Phosphoacceptor)
+
+```{r}
+
+Ishi_disorder_scaled$Phosphoacceptor <- factor(Ishi_disorder_scaled$Phosphoacceptor, levels = c('T','S'))
+
+p <- ggplot(Ishi_disorder_scaled, aes(x=Phosphoacceptor, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[132],size=0.4) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Phosphoacceptor") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=9,face="plain"),plot.title=element_text(size=10,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0,0.1,0), "cm")) # t, r, b, l
+e <- p
+
+e
+
+```
+
+# Supplementary figure 5F (abundance:substrate_quality)
+
+```{r}
+
+# We need to construct a new data frame to capture the interaction
+
+Ishi_A_C <- Ishi_disorder_scaled
+Ishi_A_median <- median(Ishi_disorder_scaled$Abundance)
+Ishi_C_median <- median(Ishi_disorder_scaled$Charge)
+
+A_C_vec <- NULL
+
+for (i in 1:nrow(Ishi_A_C)) {
+  
+  stoi_row <- Ishi_A_C[i,]
+  
+  if (stoi_row$Abundance < Ishi_A_median & stoi_row$Charge < Ishi_C_median) {A_C <- 'Low A Low S'}
+  if (stoi_row$Abundance < Ishi_A_median & stoi_row$Charge > Ishi_C_median) {A_C <- 'Low A High S'}
+  if (stoi_row$Abundance > Ishi_A_median & stoi_row$Charge < Ishi_C_median) {A_C <- 'High A Low S'}
+  if (stoi_row$Abundance > Ishi_A_median & stoi_row$Charge > Ishi_C_median) {A_C <- 'High A High S'}
+  
+  A_C_vec <- c(A_C_vec, A_C)
+  
+}
+
+Ishi_A_C <- cbind(Ishi_A_C, A_C_vec)
+colnames(Ishi_A_C) <- c(colnames(Ishi_disorder_scaled), 'AC')
+
+Ishi_A_C$AC <- factor(Ishi_A_C$AC, levels = c('High A Low S','High A High S','Low A Low S','Low A High S'))
+
+p <- ggplot(Ishi_A_C, aes(x=AC, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[601],size=0.75) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("CK2 Stoichiometry") + xlab("Abundance : Substrate quality") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title.x=element_text(size=8,face="plain",vjust=2.25),
+             axis.title.y=element_text(size=8,face="plain"),plot.title=element_text(size=9,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0.5,0.1,0.5), "cm")) # t, r, b, l
+f <- p
+f
+
+```
+
+# Supplementary figure 5G (Interaction:substrate_quality)
+
+```{r}
+
+# We need to construct a new data frame to capture the interaction
+
+Ishi_I_C <- Ishi_disorder_scaled
+Ishi_C_median <- median(Ishi_disorder_scaled$Charge)
+
+I_C_vec <- NULL
+
+for (i in 1:nrow(Ishi_I_C)) {
+  
+  stoi_row <- Ishi_I_C[i,]
+  
+  if (stoi_row$Int_num == 'Y' & stoi_row$Charge < Ishi_C_median) {I_C <- 'I Low S'}
+  if (stoi_row$Int_num == 'Y'  & stoi_row$Charge > Ishi_C_median) {I_C <- 'I High S'}
+  if (stoi_row$Int_num == 'N'  & stoi_row$Charge < Ishi_C_median) {I_C <- 'No I Low S'}
+  if (stoi_row$Int_num == 'N' & stoi_row$Charge > Ishi_C_median) {I_C <- 'No I High S'}
+  
+  I_C_vec <- c(I_C_vec, I_C)
+  
+}
+
+Ishi_I_C <- cbind(Ishi_I_C, I_C_vec)
+colnames(Ishi_I_C) <- c(colnames(Ishi_disorder_scaled), 'IC')
+
+Ishi_I_C$IC <- factor(Ishi_I_C$IC, levels = c('No I Low S','No I High S','I Low S','I High S'))
+
+p <- ggplot(Ishi_I_C, aes(x=IC, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[601],size=0.75) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Interaction : Substrate quality") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title.x=element_text(size=8,face="plain",vjust=2.25),
+             axis.title.y=element_text(size=8,face="plain"),plot.title=element_text(size=9,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0.25,0.1,0.25), "cm")) # t, r, b, l
+g <- p
+g
+
+```
+
+# Supplementary figure 5H (Disorder:phosphoacceptor)
+
+```{r}
+
+# We need to construct a new data frame to capture the interaction
+
+Ishi_D_P <- Ishi_disorder_scaled
+
+D_P_vec <- NULL
+
+for (i in 1:nrow(Ishi_D_P)) {
+  
+  stoi_row <- Ishi_D_P[i,]
+  
+  if (stoi_row$Disorder_class == 'O' & stoi_row$Phosphoacceptor == 'T') {D_P <- 'Order T'}
+  if (stoi_row$Disorder_class == 'D' & stoi_row$Phosphoacceptor == 'T') {D_P <- 'Disorder T'}
+  if (stoi_row$Disorder_class == 'O' & stoi_row$Phosphoacceptor == 'S') {D_P <- 'Order S'}
+  if (stoi_row$Disorder_class == 'D' & stoi_row$Phosphoacceptor == 'S') {D_P <- 'Disorder S'}
+  
+  D_P_vec <- c(D_P_vec, D_P)
+  
+}
+
+Ishi_D_P <- cbind(Ishi_D_P, D_P_vec)
+colnames(Ishi_D_P) <- c(colnames(Ishi_disorder_scaled), 'IC')
+
+Ishi_D_P$IC <- factor(Ishi_D_P$IC, levels = c('Order T','Disorder T','Order S','Disorder S'))
+
+p <- ggplot(Ishi_D_P, aes(x=IC, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[601],size=0.75) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("Disorder : Phosphoacceptor") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title.x=element_text(size=8,face="plain",vjust=2.25),
+             axis.title.y=element_text(size=8,face="plain"),plot.title=element_text(size=9,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0.5,0.1,0.5), "cm")) # t, r, b, l
+h <- p
+h
+
+```
+
+# Calcuate the p-values for the CK2 data
+
+```{r}
+
+Ishi_disorder_scaled[,3] <- Ishi_disorder_scaled[,3] / 100
+
+# Disorder
+
+model_disorder_score <- glm(Stoichiometry ~ Disorder_score, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+disorder_score_F_p_AF2 <- anova(model_null,model_disorder_score, test='F')$'Pr(>F)'[2]
+
+# Substrate quality
+
+model_charge <- glm(Stoichiometry ~ Charge, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+charge_F_p <- anova(model_null,model_charge, test='F')$'Pr(>F)'[2]
+
+# Abundance
+
+model_abundance <- glm(Stoichiometry ~ Abundance, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+abundance_F_p <- anova(model_null,model_abundance, test='F')$'Pr(>F)'[2]
+
+# Phoshoacceptor
+
+model_phosphoacceptor <- glm(Stoichiometry ~ Phosphoacceptor, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+phosphoacceptor_class_F_p <- anova(model_null,model_phosphoacceptor, test='F')$'Pr(>F)'[2]
+
+# Subcellular location
+
+model_location <- glm(Stoichiometry ~ Location, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+location_F_p <- anova(model_null,model_location, test='F')$'Pr(>F)'[2]
+
+# Physical interaction
+
+model_physical <- glm(Stoichiometry ~ Int_num, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+physical_F_p <- anova(model_null,model_physical, test='F')$'Pr(>F)'[2]
+
+# Charge:abundance
+
+model_charge_abundance <- glm(Stoichiometry ~ Charge+Abundance, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+model_charge_abundance_int <- glm(Stoichiometry ~ Charge+Abundance+Charge:Abundance, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+charge_abundance_int_F_p <- anova(model_charge_abundance,model_charge_abundance_int, test='F')$'Pr(>F)'[2]
+
+# Disorder:phosphoacceptor
+
+model_charge_phosphoacceptor <- glm(Stoichiometry ~ Disorder_score+Phosphoacceptor, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+model_charge_phosphoacceptor_int <- glm(Stoichiometry ~ Disorder_score+Phosphoacceptor+Disorder_score:Phosphoacceptor, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+disorder_phosphoacceptor_p <- anova(model_charge_phosphoacceptor,model_charge_phosphoacceptor_int, test='F')$'Pr(>F)'[2]
+
+# Charge:physical interaction
+
+model_charge_physical <- glm(Stoichiometry ~ Charge+Int_num, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+model_charge_physical_int <- glm(Stoichiometry ~ Charge+Int_num+Charge:Int_num, data = Ishi_disorder_scaled, family=quasibinomial(cloglog))
+
+charge_physical_int_F_p <- anova(model_charge_physical,model_charge_physical_int, test='F')$'Pr(>F)'[2]
+
+```
+
+
+# Supplementary figure 5I
+
+```{r}
+
+p_values <- c(disorder_score_F_p_AF2,charge_F_p,abundance_F_p,phosphoacceptor_class_F_p,location_F_p,physical_F_p,
+              charge_abundance_int_F_p,disorder_phosphoacceptor_p, charge_physical_int_F_p)
+min_log10_p <- -log(p_values,base=10)
+
+predictors <- c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Subcellular location','Interaction',
+                'Abundance : SQ', 'Disorder : Phosphoacceptor', 'Interaction : SQ')
+
+df_pvalues <- data.frame(predictors,min_log10_p)
+colnames(df_pvalues) <- c('Predictors','Pvalue')
+df_pvalues$Predictors <- factor(df_pvalues$Predictors , levels = rev(c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Interaction','Subcellular location','Abundance : SQ',
+    'Interaction : SQ','Disorder : Phosphoacceptor')))
+
+p <- ggplot(data=df_pvalues, aes(x=Predictors, y=Pvalue)) +
+  geom_bar(stat="identity",fill=colors()[35],color='black',lwd=1)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("-log10(P)") + xlab("") + ggtitle('CK2')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title=element_text(size=6,face="plain",vjust=0),plot.title=element_text(size=10,face='bold',vjust=-1.5))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0,0.1,0,-0.35), "cm")) # t, r, b, l
+
+# Horizontal bar plot
+p <- p + coord_flip()
+p <- p+theme(axis.title.x=element_text(size=9,face="plain",vjust=5))
+i <- p
+i
+
+```
+
+# Supplementary figure 5J (from MAPK analysis)
+
+```{r}
+
+p_values <- c(disorder_score_F_p_MAPK,motif_F_p_MAPK,abundance_F_p_MAPK,phosphoacceptor_class_F_p_MAPK,location_F_p_MAPK,physical_F_p_MAPK, charge_abundance_int_F_p_MAPK,disorder_phosphoacceptor_p_MAPK, charge_physical_int_F_p_MAPK)
+min_log10_p <- -log(p_values,base=10)
+
+predictors <- c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Subcellular location','Interaction',
+                'Abundance : SQ', 'Disorder : Phosphoacceptor', 'Interaction : SQ')
+
+df_pvalues <- data.frame(predictors,min_log10_p)
+colnames(df_pvalues) <- c('Predictors','Pvalue')
+df_pvalues$Predictors <- factor(df_pvalues$Predictors , levels = rev(c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Interaction','Subcellular location','Abundance : SQ',
+    'Interaction : SQ','Disorder : Phosphoacceptor')))
+
+p <- ggplot(data=df_pvalues, aes(x=Predictors, y=Pvalue)) +
+  geom_bar(stat="identity",fill=colors()[147],color='black',lwd=0.75)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("-log10(P)") + xlab("") + ggtitle('MAPK')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title=element_text(size=6,face="plain",vjust=0),plot.title=element_text(size=10,face='bold',vjust=-1.5))
+#p <- p + coord_cartesian(ylim = c(0, 30))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0,0.1,0,-0.35), "cm")) # t, r, b, l
+
+# Horizontal bar plot
+p <- p + coord_flip(ylim = c(0, 22))
+p <- p+theme(axis.title.x=element_text(size=9,face="plain",vjust=5))
+j <- p
+j
+
+```
+
+# Supplementary figure 5K (from EGFR analysis)
+
+```{r}
+
+p_values <- c(disorder_score_F_p_EGFR_AF2,motif_F_p_EGFR,abundance_F_p_EGFR,phosphoacceptor_class_F_p_EGFR,location_F_p_EGFR,physical_F_p_EGFR, motif_abundance_int_F_p_EGFR, disorder_phosphoacceptor_p_EGFR, charge_physical_int_F_p_EGFR)
+min_log10_p <- -log(p_values,base=10)
+
+predictors <- c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Subcellular location','Interaction',
+                'Abundance : SQ', 'Disorder : Phosphoacceptor', 'Interaction : SQ')
+
+df_pvalues <- data.frame(predictors,min_log10_p)
+colnames(df_pvalues) <- c('Predictors','Pvalue')
+df_pvalues$Predictors <- factor(df_pvalues$Predictors , levels = rev(c('Predicted disorder','Substrate quality (SQ)','Abundance','Phosphoacceptor','Interaction','Subcellular location','Abundance : SQ',
+    'Interaction : SQ','Disorder : Phosphoacceptor')))
+
+p <- ggplot(data=df_pvalues, aes(x=Predictors, y=Pvalue)) +
+  geom_bar(stat="identity",fill=colors()[548],color='black',lwd=0.75)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("-log10(P)") + xlab("") + ggtitle('EGFR')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=6),axis.title=element_text(size=6,face="plain",vjust=0),plot.title=element_text(size=10,face='bold',vjust=-1.5))
+#p <- p + coord_cartesian(ylim = c(0, 30))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0,0.1,0,-0.35), "cm")) # t, r, b, l
+
+# Horizontal bar plot
+p <- p + coord_flip(ylim = c(0, 22))
+p <- p+theme(axis.title.x=element_text(size=9,face="plain",vjust=5))
+k <- p
+k
+
+```
+
+
+# Cowplot (put it all together)
+
+```{r}
+
+library(cowplot)
+
+g1 <- plot_grid(a,b,c,d,e,ncol=5,nrow=1,align='h',rel_widths=c(0.2,0.2,0.2,0.2,0.2), labels=c('a','b','c','d','e'), axis='b')
+g1
+
+g2 <- plot_grid(f,g,h,ncol=3,nrow=1,align='h',rel_widths=c(0.3333,0.3333,0.33333), labels=c('f','g','h'), axis='b')
+g2
+
+g3 <- plot_grid(i,j,k,ncol=3,nrow=1,align='h',rel_widths=c(0.3333,0.3333,0.33333), labels=c('i','j','k'), axis='b')
+g3
+
+g4 <- plot_grid(g1,g2,g3,nrow=3)
+g4
+
+ggsave(file='Supplementary_figure_2_AF2_publications.pdf', plot=g4, width=10, height=5.8)
+
+```
+  
+# Scrap code
+
+```{r}
+
+ck2_disorder <- Ishi_disorder_scaled[Ishi_disorder_scaled$Disorder_score >= 0.8,]
+plot(ck2_disorder$Charge,ck2_disorder$Stoichiometry)
+cor.test(ck2_disorder$Charge,ck2_disorder$Stoichiometry)
+
+ck2_order <- Ishi_disorder_scaled[Ishi_disorder_scaled$Disorder_score <= 0.4,]
+plot(ck2_order$Charge,ck2_order$Stoichiometry)
+cor.test(ck2_order$Charge,ck2_order$Stoichiometry)
+
+
+ck2_order_b <- ck2_order[ck2_order[,7] > 0.1 & ck2_order[,7] <= 0.2,3]
+ck2_order_c <- ck2_order[ck2_order[,7] > 0.2 & ck2_order[,7] <= 0.3,3]
+ck2_order_d <- ck2_order[ck2_order[,7] > 0.3 & ck2_order[,7] <= 0.4,3]
+ck2_order_e <- ck2_order[ck2_order[,7] > 0.4 & ck2_order[,7] <= 0.5,3]  
+ck2_order_f <- ck2_order[ck2_order[,7] > 0.5 & ck2_order[,7] <= 0.6,3] 
+
+```
+
+
+
+

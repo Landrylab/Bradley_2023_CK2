@@ -1,0 +1,467 @@
+---
+title: "Supplementary figure 5 EGFR"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Stoichiometry in humans (EGFR)
+
+```{r}
+
+library(gdata)
+library(ggseqlogo)
+library(ggplot2)
+library(stringr)
+
+Ishi <- read.xls('Ishihama_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE)
+
+## Exclude sites with 0 stoichiometry
+
+Ishi <- Ishi[!is.nan(Ishi[,8]),]
+Ishi <- Ishi[!Ishi[,8] == 0,]
+Ishi_EGFR <- Ishi[grep('EGFR',Ishi[,18]),]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+Ishi_EGFR <- Ishi_EGFR[!Ishi_EGFR[,3] == '2 Phospho (Y)',]
+
+```
+
+# Obtain abundance values for the EGFR substrates
+
+```{r}
+
+# Read in the PaxDB table
+
+human_paxdb <- read.table('Human_stoichiometry_PaxDB_integrated.tsv',sep='\t',stringsAsFactors = FALSE)
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+
+# Read in the table that maps between UniProt and Ensembl IDs
+
+uniprot_map <- read.table('full_uniprot_2_paxdb.04.2015.tsv', stringsAsFactors = FALSE)
+uniprot_map <- uniprot_map[uniprot_map[,1] == '9606',]
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+ensembl_uniprot <- uniprot_map[uniprot_map[,3] %in% human_ensembl,c(2,3)]
+ensembl_uniprot[,1] <- rapply(strsplit(ensembl_uniprot[,1],split='\\|'), function(x) x[1])
+rownames(ensembl_uniprot) <- NULL
+
+# Retrieve Ensembl IDs of EGFR substrates
+
+Ishi_EGFR_ensembl <- Ishi_EGFR[Ishi_EGFR[,7] %in% ensembl_uniprot[,1],]
+Ishi_EGFR_ensembl <- Ishi_EGFR_ensembl[,c(7,11,8,9)]
+colnames(Ishi_EGFR_ensembl) <- c('Accession','Position','Stoichiometry','Peptide')
+
+Ishi_EGFR_ensembl_ext <- Ishi_EGFR_ensembl
+ensembl_vec <- NULL
+s = 0
+
+for (i in 1:nrow(Ishi_EGFR_ensembl)) {  
+  
+  i2 <- i+s
+  
+  accession <- Ishi_EGFR_ensembl[i,1]
+  ensembl <- ensembl_uniprot[ensembl_uniprot[,1] %in% accession,2]
+  
+  # Account for the fact that some accessions map to more than one ensembl ID
+  
+  if (length(ensembl) != 1) {
+    middle_vec <- rep(list(Ishi_EGFR_ensembl_ext[i2,]),times=length(ensembl)-1)
+    middle_chunk <-matrix(unlist(middle_vec),ncol=4,byrow=T)
+    colnames(middle_chunk) <- colnames(Ishi_EGFR_ensembl_ext)
+  } else {
+    middle_chunk <- Ishi_MAPK_ensembl_ext[i2,]
+  }
+    
+  if (length(ensembl) != 1) {Ishi_EGFR_ensembl_ext <- rbind(Ishi_EGFR_ensembl_ext[1:i2,],middle_chunk,Ishi_EGFR_ensembl_ext[(i2+1):nrow(Ishi_EGFR_ensembl_ext),])}
+  if (length(ensembl) != 1) {s = s+1}
+  
+  ensembl_vec <- c(ensembl_vec, ensembl)
+  
+}
+
+Ishi_EGFR_ensembl_ext <- cbind(Ishi_EGFR_ensembl_ext, ensembl_vec)
+colnames(Ishi_EGFR_ensembl_ext) <- c('Accession', 'Position', 'Stoichiometry','Peptide','Ensembl')
+
+# Retrieve abundance data
+
+abundance_vec <- NULL
+
+for (i in 1:nrow(Ishi_EGFR_ensembl_ext)) {
+  
+  ensembl_id <- Ishi_EGFR_ensembl_ext[i,5]
+  abundance <- human_paxdb[human_ensembl %in% ensembl_id,3]
+  abundance_vec <- c(abundance_vec, abundance)
+  
+}
+
+# Take the log10 of the abundance values
+
+log_abundance_vec <- log(abundance_vec,base=10)
+Ishi_abundance <- cbind(Ishi_EGFR_ensembl_ext, log_abundance_vec)
+colnames(Ishi_abundance) <- c('Accession','Position','Stoichiometry','Peptide','Ensembl','Abundance')
+
+```
+
+# Phosphoacceptor
+
+```{r}
+
+# Check to see if stoichiometry differs between S and T sites
+
+egfr_fasta <- read.fasta('EGFR_substrates.fasta',seqtype = 'AA')
+egfr_fasta_names <- rapply(strsplit(names(egfr_fasta),split='\\|'), function(x) x[2])
+
+error_index <- NULL
+disorder_res_vec <- NULL
+
+for (i in 1:nrow(Ishi_abundance)) {
+  
+  accession <- Ishi_abundance[i,1]
+  pos <- as.numeric(Ishi_abundance[i,2])
+  
+  if (accession=='Q03252') {
+    
+    accession <- 'Q03252'
+    pos <- 374
+    
+  }
+  
+  if (accession=='Q13620') {
+    
+    accession <- 'Q13620'
+    pos <- 898
+    
+  }
+  
+  target_seq <- egfr_fasta[egfr_fasta_names %in% accession]
+  target_seq <- unlist(getSequence(target_seq))
+  disorder_res <- target_seq[pos]
+  
+  if (!disorder_res %in% c('S','T','Y') | length(disorder_res) == 0) {
+    stop()
+  }
+  
+  disorder_res_vec <- c(disorder_res_vec, disorder_res)
+  
+}
+
+```
+
+
+# Disorder content prediction
+
+```{r}
+
+library(seqinr)
+
+# We will predict protein disorder by using an AF2-based method where the smoothened surface
+# accessibility within a sequence window is used as a proxy for protein disorder.
+# The approach is described here, and it is where we source the accessibility data:
+# https://github.com/normandavey/ProcessedAlphafold
+
+# For proteins without protein structures we use the SPOT-Disorder-Single predictor
+
+Ishi_disorder_EGFR <- readRDS('Ishi_disorder_EGFR_old.rds')
+
+#AlphaFold disorder prediction on the basis of accessibility
+
+AF2_accessibility <- readLines('9606.accessibility_windowed_scores.15.tdt')
+
+AF2_vec <- NULL
+
+count = 0
+
+for (i in 1:nrow(Ishi_abundance)) {
+  
+  print(i)
+  
+  accession <- Ishi_abundance[i,1]
+  pos <- as.numeric(Ishi_abundance[i,2])
+  
+   if (accession=='Q03252') {
+    
+    accession <- 'Q03252'
+    pos <- 374
+    
+  }
+  
+  if (accession=='Q13620') {
+    
+    accession <- 'Q13620'
+    pos <- 898
+    
+  }
+  
+  grep_dex <- grep(accession,AF2_accessibility)
+  
+  if (length(grep_dex) == 0) {disorder_pred <- Ishi_disorder_EGFR[i,8]; AF2_vec <- c(AF2_vec,disorder_pred); 
+  count = count+1; next}
+  
+  disorder_pred <- AF2_accessibility[grep_dex]
+  disorder_pred <- rapply(strsplit(disorder_pred,split='\t'), function(x) x[2])
+  disorder_pred <- unlist(strsplit(disorder_pred,split=','))
+  disorder_pred <- disorder_pred[pos]
+  
+  if (is.na(disorder_pred)) {disorder_pred <- Ishi_disorder_EGFR[i,8]; AF2_vec <- c(AF2_vec,disorder_pred); 
+  count = count+1; next}
+  
+  AF2_vec <- c(AF2_vec,disorder_pred)
+  
+}
+
+AF2_vec <- as.numeric(AF2_vec)
+
+####
+
+# Use 0.55 disorder threshold for binary classification of protein disorder
+# https://github.com/normandavey/ProcessedAlphafold
+
+disorder_class_vec <- rep('D',length(AF2_vec))
+disorder_class_vec[AF2_vec <= 0.55] <- 'O'
+
+Ishi_disorder <- cbind(Ishi_abundance,disorder_res_vec,AF2_vec,disorder_class_vec)
+colnames(Ishi_disorder) <- c(colnames(Ishi_abundance),'Phosphoacceptor','Disorder_score','Disorder_class')
+
+#######
+
+```
+
+# Optimal or minimal
+
+```{r}
+
+# Check whether 'minimal'/'optimal' status affects phosphorylation stoichiometry
+# Motif assignments based on the following reference
+# Ref: https://www.pnas.org/content/115/31/E7303.full
+
+EGFR_sites <- Ishi_disorder[,4]
+opt_dex <- substr(EGFR_sites,4,4) %in% c('D','E')  | substr(EGFR_sites,10,10) %in% c('I','P', 'L', 'M') | substr(EGFR_sites,9,9) %in% c('D','E','F') | substr(EGFR_sites,3,3) %in% c('D','E') 
+min_dex <- !opt_dex
+
+Ishi_disorder_motif <- data.frame(Ishi_disorder,rep(0,nrow(Ishi_disorder)))
+colnames(Ishi_disorder_motif) <- c(colnames(Ishi_disorder),'Motif')
+
+Ishi_disorder_motif[opt_dex,10] <- 'Optimal'
+Ishi_disorder_motif[min_dex,10] <- 'Minimal'
+
+```
+
+# EGFR physical interactions
+
+```{r}
+
+# Some GLMs only accept response variables between 0 and 1
+
+Ishi_disorder_motif_beta <- Ishi_disorder_motif
+Ishi_disorder_motif_beta[,3] <- as.numeric(Ishi_disorder_motif_beta[,3])
+Ishi_disorder_motif_beta[,3] <- Ishi_disorder_motif_beta[,3] / 100
+
+# Read in the iRefindex data for human:
+
+# N.B. This PPI file is too big (2.9 GB) for me to include on GitHub. Please download the PPI file
+# for Homo Saoiens from the iRefIndex website: https://irefindex.vib.be/wiki/index.php/iRefIndex
+
+irefindex <- read.table('9606.mitab.27062020.txt', sep='\t', fill=TRUE)
+EGFR_int <- unique(c(irefindex[grep('P00533',irefindex[,1]),2],irefindex[grep('P00533',irefindex[,2]),1]))
+
+# Check for direct interaction with EGFR
+
+shared_vec <- NULL
+
+for (i in 1:nrow(Ishi_disorder_motif_beta)) {
+  
+  print(i)
+  
+  uniprot <- Ishi_disorder_motif_beta[i,1]
+  
+  uniprot_int <- unique(c(irefindex[grep(uniprot,irefindex[,1]),2],irefindex[grep(uniprot,irefindex[,2]),1]))
+  
+  shared_int <- intersect(uniprot_int, c('uniprotkb:P00533'))
+  
+  shared_int_len <- length(shared_int)
+  
+  shared_int_len[shared_int_len > 0] <- 1
+  
+  shared_vec <- c(shared_vec, shared_int_len)
+  
+}
+
+Ishi_disorder_motif_beta_int <- cbind(Ishi_disorder_motif_beta,shared_vec)
+colnames(Ishi_disorder_motif_beta_int) <- c(colnames(Ishi_disorder_motif_beta),'Int_num')
+
+```
+
+# EGFR substrate subcellular localisation
+
+```{r}
+
+# Subcellular locations for each MAPK substrate were scraped from UniProt
+
+EGFR_uniprot_scrape <- readLines('EGFR_UniProt_raw.txt')
+
+# Parse the raw UniProt entries to the retrieve the subcellular localisation information
+
+EGFR_target_SC_vec <- NULL
+
+for (i in 1:nrow(Ishi_disorder_motif_beta_int)) {
+     
+    accession <- Ishi_disorder_motif_beta_int[i,1]
+    
+    EGFR_targets_start_AC <- grep('AC  ',EGFR_uniprot_scrape)
+    EGFR_targets_start_accession <- grep(accession,EGFR_uniprot_scrape)
+    
+    start <- intersect(EGFR_targets_start_AC,EGFR_targets_start_accession)
+    if (length(start) >1) {stop('Start problem')}
+    
+    end_grep <- grep('FT   ',EGFR_uniprot_scrape)
+    end_grep <- end_grep[which((end_grep-start) > 0)]
+    end <- end_grep[which((end_grep-start) == min(end_grep-start))]
+    
+    #####
+    
+    EGFR_target_scrape <- EGFR_uniprot_scrape[start:end]
+    
+    EGFR_target_GO <- grep('GO;',EGFR_target_scrape)
+    EGFR_target_C <- grep('C:',EGFR_target_scrape)  
+    
+    EGFR_target_GO_C <- intersect(EGFR_target_GO,EGFR_target_C)
+    
+    EGFR_target_GO_C_text <- EGFR_target_scrape[EGFR_target_GO_C]
+    
+    if (length(EGFR_target_GO_C_text) == 0) {location <- 'Unknown'; EGFR_target_SC_vec <- c(EGFR_target_SC_vec,location); next}
+    
+    GO_compartments <- rapply(strsplit(rapply(strsplit(EGFR_target_GO_C_text,split=' C:'), function(x) x[2]), split=';'), function(x) x[1])
+    
+    #####
+    
+    # Assign the location to nucleus (N), cytoplasm (C), or mitochondria (M) depending upon matches to the corresponding GO terms
+    
+    N <- 0
+    C <- 0
+    M <- 0
+    
+    nuclear_terms <- c('nucleus','nucleoplasm','nuclear envelope', 'nuclear speck','ribonucleoprotein complex','nucleolus', 'chromosome')
+    cyto_terms <- c('cytoplasm','cytosol')
+    mito_terms <- c('mitochondria', 'mitochondrion', 'mitochondrial inner membrane', 'mitochondrial outer membrane', 'mitochondrial membrane')
+    
+    if (length(intersect(GO_compartments,nuclear_terms)) > 0) {N <- 1}
+    if (length(intersect(GO_compartments,cyto_terms)) > 0) {C <- 1}
+    if (length(intersect(GO_compartments,mito_terms)) > 0) {M <- 1}
+    
+    if (N == 1 & C == 1 & M == 1) {location <- 'NCM'}
+    if (N == 1 & C == 0 & M == 1) {location <- 'NM'}
+    if (N == 1 & C == 1 & M == 0) {location <- 'NC'}
+    if (N == 0 & C == 1 & M == 1) {location <- 'CM'}
+    if (N == 1 & C == 0 & M == 0) {location <- 'N'}
+    if (N == 0 & C == 1 & M == 0) {location <- 'C'}
+    if (N == 0 & C == 0 & M == 1) {location <- 'M'}
+    if (N == 0 & C == 0 & M == 0) {location <- 'None'}
+    
+    EGFR_target_SC_vec <- c(EGFR_target_SC_vec,location)
+    
+}
+
+# Group together infrequent labels to maximise power
+
+EGFR_target_SC_vec <- gsub('^CM$','Other',EGFR_target_SC_vec)
+EGFR_target_SC_vec <- gsub('^NCM$','Other',EGFR_target_SC_vec)
+EGFR_target_SC_vec <- gsub('^NM$','Other',EGFR_target_SC_vec)
+EGFR_target_SC_vec <- gsub('^M$','Other',EGFR_target_SC_vec)
+EGFR_target_SC_vec <- gsub('^None$','Other',EGFR_target_SC_vec)
+EGFR_target_SC_vec <- gsub('^Unknown$','Other',EGFR_target_SC_vec)
+
+# Add to data frame
+
+EGFR_col <- colnames(Ishi_disorder_motif_beta_int) 
+Ishi_disorder_motif_beta_int <- cbind(Ishi_disorder_motif_beta_int, EGFR_target_SC_vec)
+colnames(Ishi_disorder_motif_beta_int ) <- c(EGFR_col, 'Location')
+
+```
+
+# Stoichiometry GLM
+
+```{r}
+
+colnames(Ishi_disorder_motif_beta_int)[6] <- 'Abundance'
+saveRDS(Ishi_disorder_motif_beta_int,'Ishi_disorder_EGFR_github.rds')
+
+# Significance of charge
+
+model_motif <- glm(Stoichiometry ~ Motif, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+motif_F_p_EGFR <- anova(model_null,model_motif, test='F')$'Pr(>F)'[2]
+
+# Significance of abundance
+
+model_abundance <- glm(Stoichiometry ~ Abundance, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+abundance_F_p_EGFR <- anova(model_null,model_abundance, test='F')$'Pr(>F)'[2]
+
+# Significance of disorder score
+
+model_disorder_score <- glm(Stoichiometry ~ Disorder_score, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+disorder_score_F_p_EGFR_AF2 <- anova(model_null,model_disorder_score, test='F')$'Pr(>F)'[2]
+
+# Significance of phosphoacceptor
+
+phosphoacceptor_class_F_p_EGFR <- 1
+
+# Significance of physical interaction
+
+model_physical <- glm(Stoichiometry ~ Int_num, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+physical_F_p_EGFR <- anova(model_null,model_physical, test='F')$'Pr(>F)'[2]
+
+# Significance of subcellular location
+
+model_location <- glm(Stoichiometry ~ Location, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+model_null <- glm(Stoichiometry ~ 1, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+location_F_p_EGFR <- anova(model_null,model_location, test='F')$'Pr(>F)'[2]
+
+## 3) Check for interactions with the charge variable
+
+## Motif:Abundance
+
+model_motif_abundance <- glm(Stoichiometry ~ Motif+Abundance, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+model_motif_abundance_int <- glm(Stoichiometry ~ Motif+Abundance+Motif:Abundance, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+motif_abundance_int_F_p_EGFR <- anova(model_motif_abundance,model_motif_abundance_int, test='F')$'Pr(>F)'[2]
+
+# Disorder:phosphoacceptor interaction
+
+disorder_phosphoacceptor_p_EGFR <- 1
+
+## Motif:Physical interaction
+
+model_charge_physical <- glm(Stoichiometry ~ Motif+Int_num, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+model_charge_physical_int <- glm(Stoichiometry ~ Motif+Int_num+Motif:Int_num, data = Ishi_disorder_motif_beta_int, family=quasibinomial(cloglog))
+
+charge_physical_int_F_p_EGFR <- anova(model_charge_physical,model_charge_physical_int, test='F')$'Pr(>F)'[2]
+
+```
+
+
+
+
