@@ -1,0 +1,294 @@
+---
+title: "Supplementary figure 1C right"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Set up the scoring function for the weighted negative charge
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the sequences
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# After removing potential hierarchical sites
+
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+ggseqlogo(psite_no_heira,method='probability')
+
+# Construct PWM using basic method
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+ggseqlogo(substr(psite_no_heira,2,14),method='probability')
+
+# Negative charge scoring function
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# Relate substrate quality to stoichiometry measured in Sharma et al., 2014
+
+```{r}
+
+library(stringr)
+
+Sharma <- read.xls('Sharma_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE, header=TRUE)
+colnames(Sharma) <- Sharma[1,]
+Sharma <- Sharma[-1,]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+Sharma_single <- Sharma[Sharma[,48] == '1',]
+
+# Localisation prob > 0.75 only
+
+Sharma_single <- Sharma_single[as.numeric(Sharma_single[,10]) > 0.75,]
+
+# S phosphoacceptor only
+
+Sharma_single <- Sharma_single[Sharma_single[,8] == 'S',]
+
+# Take the stoichiometry of the control cells only
+
+Ishi_CK2_stoi <- Sharma_single[,c(1,47)]
+
+# Remove all potential heirarchical sites and T sites
+p0 <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[16])
+p1 <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[17])
+p3 <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[19]) 
+
+#Find predicted CK2 sites matching the S-D/E-x-D/E motif
+p1ED <- p1 %in% c('D','E')
+p3ED <- p3 %in% c('D','E')
+
+Ishi_CK2_stoi <- Ishi_CK2_stoi[p1ED & p3ED,]
+
+# Remove NaNs
+
+Ishi_CK2_stoi <- Ishi_CK2_stoi[!Ishi_CK2_stoi[,1] == 'NaN',]
+
+# Remove the few cases where there are multiple sites for one stoichiometry measurement
+
+Ishi_CK2_stoi <- Ishi_CK2_stoi[nchar(Ishi_CK2_stoi[,2]) == 31,]
+
+# Retrieve 15mer
+
+Ishi_CK2_stoi[,2] <- substr(Ishi_CK2_stoi[,2],10,22)
+Ishi_CK2_stoi[,1] <- Ishi_CK2_stoi[,1]*100
+
+mss_vec <- NULL
+
+for (i in 1:nrow(Ishi_CK2_stoi)) {
+  
+  mss <- NULL
+  ck2_site <- Ishi_CK2_stoi[i,2]
+  mss <- ED_weight(ck2_site,csnk2_pwm)
+  if (length(mss) == 0) {break}
+  mss_vec <- c(mss_vec, mss)
+  
+}
+
+Ishi_CK2_stoi <- cbind(Ishi_CK2_stoi, mss_vec)
+colnames(Ishi_CK2_stoi) <- c('Control','Sequence window','MSS')
+
+# Calculate substrate quality for each site
+
+ED_list <- list()
+col1 <- NULL
+col2 <- NULL
+col3 <- NULL
+
+for (i in 0:9) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  print(lower)
+  print(upper)
+  
+  ED_stoi <- Ishi_CK2_stoi[Ishi_CK2_stoi[,3] > lower & Ishi_CK2_stoi[,3] <= upper,1]
+  ED_stoi <- as.numeric(ED_stoi)
+  #ED_stoi <- ED_stoi[!ED_stoi == 'NaN']
+  ED_list <- c(ED_list, list(ED_stoi))
+  
+  col1 <- c(col1,ED_stoi)
+  col2 <- c(col2,rep(paste(lower,'-',upper,sep=''),length(ED_stoi)))
+  col3 <- c(col3,Ishi_CK2_stoi[Ishi_CK2_stoi[,3] > lower & Ishi_CK2_stoi[,3] <= upper,1])
+}
+
+mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Stoichiometry','Positions')
+
+### Use ggplot to boxplot the relationship between substrate quality and stoichiometry
+
+p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[35],size=0.6) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("") + ggtitle('Sharma et al., 2014 (human, n=153)')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=11,face="plain"),plot.title=element_text(size=10,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0.2,0,0.1,0), "cm")) # t, r, b, l
+b3 <- p
+
+supp_fig_1c_sharma <- p
+
+ggsave(file='Supplementary_figure_1C_Sharma.pdf', plot=b1, width=6.0, height=4.8)
+
+```
+
