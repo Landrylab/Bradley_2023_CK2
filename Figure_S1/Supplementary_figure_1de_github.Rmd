@@ -1,0 +1,140 @@
+---
+title: "Supplementary figure 1DE"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Compare stoichiometry between 'minimal' and 'optimal' stoichiometry sites for MAPK
+
+```{r}
+
+library(stringr)
+
+Ishi <- read.xls('Ishihama_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE)
+
+## Exclude sites with 0 stoichiometry
+
+Ishi <- Ishi[!Ishi[,8] == 0,]
+Ishi_MAPK <- Ishi[grep('MAPK',Ishi[,18]),]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+Ishi_MAPK <- Ishi_MAPK[!Ishi_MAPK[,3] == '2 Phospho (ST)',]
+
+# Optimal: P-x-S-P
+# Minimal: S-P 
+
+MAPK_sites <- Ishi_MAPK[,9]
+opt_dex <- substr(MAPK_sites,8,8) == 'P'  & substr(MAPK_sites,5,5) %in% c('P')
+min_dex <- substr(MAPK_sites,8,8) == 'P'  & !substr(MAPK_sites,5,5) %in% c('P')
+
+opt_stoi <- Ishi_MAPK[opt_dex,8]
+min_stoi <- Ishi_MAPK[min_dex,8]
+
+col1 <- c(min_stoi,opt_stoi)
+col2 <- c(rep('S/T-P',length(min_stoi)),rep('P-x-S/T-P',length(opt_stoi)))
+
+mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
+colnames(mss_data) <- c('Stoichiometry','Class')
+mss_data$Class <- factor(mss_data$Class, levels = c('S/T-P','P-x-S/T-P'))
+
+p <- ggplot(mss_data, aes(x=Class, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[147], lwd=1.15, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[147],size=0.6) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.0, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("") + ggtitle('MAPK')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=9),axis.title=element_text(size=11,face="plain"),plot.title=element_text(size=10,face='bold',vjust=-1.5))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0,0,0,0), "cm")) # t, r, b, l
+b1 <- p
+
+supp_fig_1d <- p
+
+ggsave(file='Supplementary_figure_1D.pdf', plot=b1, width=3.0, height=4.8)
+
+```
+
+# Compare stoichiometry between 'minimal' and 'optimal' stoichiometry sites for EGFR
+
+```{r}
+
+# Reference for EGFR specificity: https://www.pnas.org/content/115/31/E7303.full
+
+library(stringr)
+
+Ishi <- read.xls('Ishihama_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE)
+
+## Exclude sites with 0 stoichiometry
+
+Ishi <- Ishi[!Ishi[,8] == 0,]
+Ishi_EGFR <- Ishi[grep('EGFR',Ishi[,18]),]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+
+Ishi_EGFR <- Ishi_EGFR[!Ishi_EGFR[,3] == '2 Phospho (ST)',]
+Ishi_EGFR <- Ishi_EGFR[!Ishi_EGFR[,3] == '2 Phospho (Y)',]
+
+#N.B. All substrates have D/R at -1
+
+EGFR_sites <- Ishi_EGFR[,9]
+
+# Optimal: D/E-D/E-x-x-Y-x-D/E/F-I/P/L/M (any one of these sufficient for this category)
+# Minimal: Peptides with none of these specificity determinants
+
+opt_dex <- substr(EGFR_sites,4,4) %in% c('D','E')  | substr(EGFR_sites,10,10) %in% c('I','P', 'L', 'M') | substr(EGFR_sites,9,9) %in% c('D','E','F') | substr(EGFR_sites,3,3) %in% c('D','E') 
+min_dex <- !opt_dex
+
+opt_stoi <- Ishi_EGFR[opt_dex,8]
+min_stoi <- Ishi_EGFR[min_dex,8]
+boxplot(min_stoi,opt_stoi)
+
+col1 <- c(min_stoi,opt_stoi)
+col2 <- c(rep('Minimal',length(min_stoi)),rep('Not \n minimal',length(opt_stoi)))
+
+mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
+colnames(mss_data) <- c('Stoichiometry','Class')
+mss_data$Class <- factor(mss_data$Class, levels = c('Minimal','Not \n minimal'))
+
+p <- ggplot(mss_data, aes(x=Class, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[548], lwd=1.15, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[548],size=0.6) 
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.0, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("") + ggtitle('EGFR')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=8),axis.title=element_text(size=11,face="plain"),plot.title=element_text(size=10,face='bold',vjust=-1.5))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+p <- p + theme(plot.margin = unit(c(0,0,0,0), "cm")) # t, r, b, l
+b1 <- p
+
+supp_fig_1e <- p
+
+ggsave(file='Supplementary_figure_1E.pdf', plot=p, width=3.0, height=4.8)
+
+```
+
+
