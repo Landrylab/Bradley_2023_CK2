@@ -1,0 +1,263 @@
+---
+title: "Supplementary figure 11"
+author: "David Bradley"
+date: "1/1/2021"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Supplementary figure 11a
+
+```{r}
+
+theta <- 10 # specified fitness optimum (scale parameter)
+m <- 0:10  # number of D/Es
+
+##### Omega 480
+
+omega <- 480 # relative strength of selection between genotypic states (shape parameter)
+
+numerator <- -(m-theta)^2  # numerator of the exponent of the fitness function
+denominator <- (2*omega^2) # denominator of the exponent of the fitness function
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('480',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_480 <- df
+
+##### Omega 675
+
+omega <- 675
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('675',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_675 <- df
+
+##### Omega 1000
+
+omega <- 1000
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('1000',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_1000 <- df
+
+##### Omega 2000
+
+omega <- 2000
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+#plot(fitness)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('2000',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_2000 <- df
+
+################
+
+rm(omega)
+
+df1 <- rbind(df_480,df_675,df_1000,df_2000)
+df1$Omega <- factor(df1$Omega, levels = c('480','675','1000','2000'))
+
+p <- ggplot(data=df1, aes(x=Pos, y=Fitness,group=Omega)) +
+  geom_line(aes(color=Omega))+
+  geom_point(aes(color=Omega))
+#p <- p+scale_color_brewer(palette='Blues')
+p <- p+scale_color_manual(values=c(colors()[491], colors()[563], colors()[121], colors()[43]))
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+p <- p + xlab('no. of D + E') + ylab('Relative fitness') + ggtitle('')
+p <- p + scale_x_continuous(breaks=c(seq(1,14,2)))
+p <- p + theme(legend.position = "none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p+theme(axis.text=element_text(size=7),axis.title=element_text(size=10,face="plain"),plot.title=element_text(size=10,face='plain'))
+p <- p+geom_text(x=1, y=0.999855, label=expression(paste(omega,' = 480')),size=4,fontface='plain',col=colors()[491],parse=T, check_overlap = TRUE)
+p <- p+geom_text(x=1, y=0.99993, label=expression(paste(omega,' = 675')),size=4,fontface='plain',col=colors()[563],parse=T, check_overlap = TRUE)
+p <- p+geom_text(x=1, y=0.99997, label=expression(paste(omega,' = 1000')),size=4,fontface='plain',col=colors()[121],parse=T, check_overlap = TRUE)
+p <- p+geom_text(x=1, y=0.999996, label=expression(paste(omega,' = 2000')),size=4,fontface='plain',col=colors()[43],parse=T,check_overlap = TRUE)
+
+p1 <- p
+
+```
+
+# Supplementary figure 11b
+
+```{r}
+
+theta <- 6
+m <- 0:10
+
+##### Omega 320
+
+omega <- 320
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('320',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_320 <- df
+
+##### Omega 475
+
+omega <- 475
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('475',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_475 <- df
+
+##### Omega 750
+
+omega <- 750
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('750',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_750 <- df
+
+##### Omega 2000
+
+omega <- 2000
+
+numerator <- -(m-theta)^2
+denominator <- (2*omega^2)
+exponent <- numerator / denominator
+fitness <- exp(exponent)
+
+s = fitness
+
+col1 <- c(0:10)
+col2 <- c(s)
+col3 <- rep('2000',length(col2))
+df <- data.frame(col1,col2,col3)
+colnames(df) <- c('Pos','Fitness','Omega')
+
+df_2000 <- df
+
+################
+
+rm(omega)
+
+df2 <- rbind(df_320,df_475,df_750,df_2000)
+df2$Omega <- factor(df2$Omega, levels = c('320','475','750','2000'))
+
+p <- ggplot(data=df2, aes(x=Pos, y=Fitness,group=Omega)) +
+  geom_line(aes(color=Omega))+
+  geom_point(aes(color=Omega))
+p <- p+scale_color_manual(values=c(colors()[81], colors()[257], colors()[494], colors()[103]))
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+p <- p + xlab('no. of D + E') + ylab('') + ggtitle('')
+p <- p + scale_x_continuous(breaks=c(seq(1,14,2)))
+p <- p + theme(legend.position = "none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p+theme(axis.text=element_text(size=7),axis.title=element_text(size=10,face="plain"),plot.title=element_text(size=10,face='plain'))
+p <- p+geom_text(x=1, y=0.999915, label=expression(paste(omega,' = 320')),size=4,fontface='plain',col=colors()[81],parse=T, check_overlap=T)
+p <- p+geom_text(x=1, y=0.999962, label=expression(paste(omega,' = 475')),size=4,fontface='plain',col=colors()[257],parse=T, check_overlap=T)
+p <- p+geom_text(x=1, y=0.999986, label=expression(paste(omega,' = 750')),size=4,fontface='plain',col=colors()[494],parse=T, check_overlap=T)
+p <- p+geom_text(x=1, y=1.0000025, label=expression(paste(omega,' = 2000')),size=4,fontface='plain',col=colors()[103],parse=T, check_overlap=T)
+
+p
+p2 <- p
+
+```
+
+# Supplementary figure 11
+
+```{r}
+
+library(cowplot)
+
+supp_fig_5 <- plot_grid(p1,p2,ncol=2,align='v',labels=c('a','b'))
+
+ggsave(file='Supplementary_figure_11.pdf', plot=supp_fig_5, width=10, height=4)
+
+```
+
+
+
