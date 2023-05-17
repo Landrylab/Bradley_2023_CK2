@@ -1,0 +1,632 @@
+---
+title: "Supplementary figure 7a 7b"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Model CK2 specificity
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+library(stringr)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr))
+
+# Human proteome
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the CK2 phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential heirarchical CK2 sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Retrieve the corresponding database records
+
+csnk2a_ksr_no_heira <- csnk2a_ksr[index_vec[!(p1s|p3s)],]
+csnk2a_ksr_no_heira <- cbind(csnk2a_ksr_no_heira,psite_no_heira)
+
+# Generate the PWM
+
+source('match-tm.r')
+
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Function for calculating the CK2 substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(apply(pwm[,c(1:6,8:13)],2,max))
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# Load in the Sharma et al 2014 data
+
+```{r}
+
+library(stringr)
+library(gdata)
+
+Sharma <- read.xls('Sharma_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE, header=TRUE)
+colnames(Sharma) <- Sharma[1,]
+Sharma <- Sharma[-1,]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+Sharma_single <- Sharma[Sharma[,48] == '1',]
+
+# Localisation prob > 0.75 only
+
+Sharma_single <- Sharma_single[as.numeric(Sharma_single[,10]) > 0.75,]
+
+# Retrieve Uniprot IDs:
+
+Sharma_UniProt_IDs <- Sharma_single[,44]
+Sharma_UniProt_IDs <- unlist(strsplit(Sharma_UniProt_IDs,split=';'))
+
+```
+
+# Peptide data
+
+```{r}
+
+# Retrive peptide data from the Phosfate SQL
+
+peptide <- read.csv('peptide.csv', head=F)
+colnames(peptide) <- c('ID','spectral_count','peptide','scored_peptide','experiment')
+
+# N.B: The peptide data makes use of peptide IDs and not the site IDs 
+
+```
+
+# Site data
+
+```{r}
+
+# Retrieve site data from the Phosfate SQL
+
+site <- read.csv('site.csv', head=F)
+colnames(site) <- c('ID','localisation','motif_type','residue','experiment')
+
+# N.B: The site table makes use of the site IDs and not the peptide IDs
+
+```
+
+# Map between peptide ID and site ID
+
+```{r}
+
+peptide_site <- read.csv('peptide_site.csv', head=F)
+colnames(peptide_site) <- c('peptide_id','site_id')
+
+# It is clear that the second column corresponds to the IDs we already have in 'site id'; the first corresponds to the set of IDs we need to map to for the peptide quantification
+
+```
+
+# Peptide quantifications
+
+```{r}
+
+# Retrieve peptide quantification data from the Phosfate SQL
+
+peptide_quantification <- read.csv('peptide_quantification.csv', head=F)
+colnames(peptide_quantification) <- c('ID','Condition','log2','Peptide')
+
+```
+
+# First thing to do is to map all uniprot IDs of proteins from the Sharma dataset to Ensembl IDs
+
+```{r}
+
+# Uniprot to Ensembl mapping
+
+uniprot_ensembl_map <- read.csv('uniprot_ensembl.csv',head=F)
+colnames(uniprot_ensembl_map) <- c('UniProt','Ensembl')
+
+substrate_ensembl_IDs <- uniprot_ensembl_map[uniprot_ensembl_map[,1] %in% unique(Sharma_UniProt_IDs),2]
+
+```
+
+# For the mappings between ensembl proteins and quantified peptides, retain only those corresponding
+# to proteins in the Sharma dataset
+
+```{r}
+
+ensp_site <- read.csv('ensp_site.csv', head=F)
+colnames(ensp_site) <- c('ensp','site_id','position')
+
+# Subset for proteins in the Sharma dataset only
+
+ensp_site_Sharma <- ensp_site[ensp_site[,1] %in% substrate_ensembl_IDs,]
+
+```
+
+# Retrieve all of the site IDs for proteins from the Sharma dataset
+
+```{r}
+
+Sharma_sites_df <- NULL
+
+for (i in 1:nrow(Sharma_single)) {
+  
+  print(i)
+  
+  accession <- Sharma_single[i,44]
+  pos <- Sharma_single[i,14]
+  target_site <- Sharma_single[i,47]
+  target_site <- substr(target_site,10,22)
+  avg_stoichiometry <- Sharma_single[i,1]
+  
+  # Retrieve Ensembl IDs for the UniProt accession
+  # We need to do strsplit because some sites are linked to more than one accession
+  
+  accessions <- unlist(strsplit(accession,split=';'))
+  
+  # Find corresponding Ensembl ID for each one of the accessions
+  
+  Sharma_ensembl_vec <- NULL
+  
+  for (j in 1:length(accessions)) {
+    ensembl_ids <- uniprot_ensembl_map[uniprot_ensembl_map[,1] %in% accessions[j],2]
+    Sharma_ensembl_vec <- c(Sharma_ensembl_vec,ensembl_ids)
+  }
+  
+  Sharma_ensembl_vec <- unique(Sharma_ensembl_vec)
+  
+  # Retrieve the site IDs corresponding to Ensembl ID and the relating substrate position
+  
+  sites_info <- ensp_site_Sharma[ensp_site_Sharma[,1] %in% Sharma_ensembl_vec & ensp_site_Sharma[,3] %in% pos,]
+  sites_info <- cbind(sites_info,rep(accession,nrow(sites_info)))
+  sites_info <- cbind(sites_info,rep(avg_stoichiometry,nrow(sites_info)))
+  sites_info <- cbind(sites_info,rep(target_site,nrow(sites_info)))
+  sites_info <- sites_info[,c(4,1,3,6,5,2)]
+  colnames(sites_info) <- c('uniprot','ensembl','pos','peptide','stoichiometry','site_id')
+  
+  # Extract the Site IDs
+  
+  site_ids <- sites_info[,6]
+  
+  exp_info <- site[site[,1] %in% site_ids,]
+  experiments <- length(unique(exp_info[,5]))
+  experiments <- as.numeric(experiments)
+
+  #### High confidence site info
+  
+  high_conf_sites <- sites_info
+  
+  # filter for sites that are class I (localisation > 0.75)
+  
+  site_ids <- unique(site_ids)
+  site_ids <- site_ids[which(site[site[,1] %in% site_ids,2] > 0.75)]
+  
+  if(length(site_ids) == 0) {next}
+  
+  #### Map site IDs to peptide IDs
+  
+  peptide_ids <- peptide_site[peptide_site[,2] %in% site_ids,1]
+  
+  ### Retrieve the quantifications  from the peptide IDs
+  
+  Sharma_target_quantification <- peptide_quantification[peptide_quantification[,4] %in% peptide_ids,]
+  Sharma_target_unique_conditions <- length(unique(Sharma_target_quantification[,2]))
+  Sharma_target_unique_conditions <- as.numeric(Sharma_target_unique_conditions)
+  
+  Sharma_sites_df <- rbind(Sharma_sites_df, c(accession,pos,target_site,avg_stoichiometry,experiments,Sharma_target_unique_conditions))
+    
+}
+
+Sharma_sites_df_unique <- unique(Sharma_sites_df)
+
+```
+
+# Obtain abundance values for proteins from the Sharma dataset
+
+```{r}
+
+# Read in the PaxDB table
+
+human_paxdb <- read.table('Human_stoichiometry_PaxDB_integrated.tsv',sep='\t',stringsAsFactors = FALSE)
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+
+# Read in the UniProt mapping table
+
+uniprot_map <- read.table('full_uniprot_2_paxdb.04.2015.tsv', stringsAsFactors = FALSE)
+uniprot_map <- uniprot_map[uniprot_map[,1] == '9606',]
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+ensembl_uniprot <- uniprot_map[uniprot_map[,3] %in% human_ensembl,c(2,3)]
+ensembl_uniprot[,1] <- rapply(strsplit(ensembl_uniprot[,1],split='\\|'), function(x) x[1])
+rownames(ensembl_uniprot) <- NULL
+
+# Retrieve Ensembl IDs of Sharma sites
+
+Sharma_sites_df_unique
+abundance_vec <- NULL
+
+s = 0
+
+# We will get warnings if we cannot calculate the max abundance -- ignore these as such cases will be filtered out later
+
+for (i in 1:nrow(Sharma_sites_df_unique)) {
+  
+  accession <- Sharma_sites_df_unique[i,1]
+  accessions <- unlist(strsplit(accession,split=';'))
+  
+  ensembl <- ensembl_uniprot[ensembl_uniprot[,1] %in% accessions,2]
+  abundance <- human_paxdb[human_ensembl %in% ensembl,3]
+  if (length(abundance) > 0) {s = s+1}
+
+  # Take the maximum abindance going forward
+  abundance <- max(abundance)
+  
+  abundance_vec <- c(abundance_vec, abundance)
+  
+}
+
+Sharma_sites_df_unique_abundance <- cbind(Sharma_sites_df_unique, abundance_vec)
+
+# Take the log10 of the abundance values
+
+Sharma_sites_df_unique_abundance <- cbind(Sharma_sites_df_unique, abundance_vec)
+
+# Exclude rows where we can't calculate abundance
+
+Sharma_sites_df_unique_abundance <- Sharma_sites_df_unique_abundance[!Sharma_sites_df_unique_abundance[,7] == '-Inf',]
+
+# Exclude rows where we can't calculate stoichiometry
+
+Sharma_sites_df_unique_abundance <- Sharma_sites_df_unique_abundance[!Sharma_sites_df_unique_abundance[,4] == 'NaN',]
+
+phosphoabundance <- as.numeric(Sharma_sites_df_unique_abundance[,4])*as.numeric(Sharma_sites_df_unique_abundance[,7])
+
+log_phosphoabundance <- log(phosphoabundance,base=10)
+
+Sharma_sites_df_unique_abundance_phospho <- cbind(Sharma_sites_df_unique_abundance,log_phosphoabundance)
+
+# Prepare the boxplot
+
+a_dex <- log_phosphoabundance > -2 & log_phosphoabundance < -1.5 
+b_dex <- log_phosphoabundance > -1.5 & log_phosphoabundance < -1.0
+c_dex <- log_phosphoabundance > -1.0 & log_phosphoabundance < -0.5
+d_dex <- log_phosphoabundance > -0.5 & log_phosphoabundance < 0
+e_dex <- log_phosphoabundance > 0 & log_phosphoabundance < 0.5
+f_dex <- log_phosphoabundance > 0.5 & log_phosphoabundance < 1.0 
+g_dex <- log_phosphoabundance > 1.0 & log_phosphoabundance < 1.5 
+h_dex <- log_phosphoabundance > 1.5 & log_phosphoabundance < 2.0 
+i_dex <- log_phosphoabundance > 2.0
+
+```
+
+# GGplot the relationship between the phospho-abundance of the sites in the Sharma dataset and the number of occurrences of the phosphosite
+
+```{r}
+
+a <- as.numeric(Sharma_sites_df_unique_abundance[a_dex,6])
+b <- as.numeric(Sharma_sites_df_unique_abundance[b_dex,6])
+c <- as.numeric(Sharma_sites_df_unique_abundance[c_dex,6])
+d <- as.numeric(Sharma_sites_df_unique_abundance[d_dex,6])
+e <- as.numeric(Sharma_sites_df_unique_abundance[e_dex,6])
+f <- as.numeric(Sharma_sites_df_unique_abundance[f_dex,6])
+g <- as.numeric(Sharma_sites_df_unique_abundance[g_dex,6])
+h <- as.numeric(Sharma_sites_df_unique_abundance[h_dex,6])
+i <- as.numeric(Sharma_sites_df_unique_abundance[i_dex,6])
+
+a_df <- data.frame(a,rep('-2 - (-1.5)',length(a)))
+colnames(a_df) <- c('Conditions','Phosphoabundance')
+b_df <- data.frame(b,rep('-1.5 - (-1.0)',length(b)))
+colnames(b_df) <- c('Conditions','Phosphoabundance')
+c_df <- data.frame(c,rep('-1.0 - (-0.5)',length(c)))
+colnames(c_df) <- c('Conditions','Phosphoabundance')
+d_df <- data.frame(d,rep('-0.5 - 0',length(d)))
+colnames(d_df) <- c('Conditions','Phosphoabundance')
+e_df <- data.frame(e,rep('0 - 0.5',length(e)))
+colnames(e_df) <- c('Conditions','Phosphoabundance')
+f_df <- data.frame(f,rep('0.5 - 1.0',length(f)))
+colnames(f_df) <- c('Conditions','Phosphoabundance')
+g_df <- data.frame(g,rep('1.0 - 1.5',length(g)))
+colnames(g_df) <- c('Conditions','Phosphoabundance')
+h_df <- data.frame(h,rep('1.5 - 2.0',length(h)))
+colnames(h_df) <- c('Conditions','Phosphoabundance')
+i_df <- data.frame(i,rep('>2.0',length(i)))
+colnames(i_df) <- c('Conditions','Phosphoabundance')
+
+phosphoabundance_df <- rbind(a_df,b_df,c_df,d_df,e_df,f_df,g_df,h_df,i_df)
+phosphoabundance_df$Phosphoabundance <- factor(phosphoabundance_df$Phosphoabundance, levels = 
+c('-2 - (-1.5)','-1.5 - (-1.0)','-1.0 - (-0.5)','-0.5 - 0','0 - 0.5','0.5 - 1.0','1.0 - 1.5','1.5 - 2.0','>2.0'))
+
+g <- ggplot(phosphoabundance_df, aes(x = Phosphoabundance, y = Conditions)) 
+g <- g + geom_boxplot(color=c(colors()[261]), width=0.55,fill=colors()[227],lwd=0.75, notch=F)
+#g <- g +  scale_fill_manual(palette = "Greys")
+g <- g+theme_bw()
+
+# Font
+g <- g+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+g <- g+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+g <- g + theme(legend.text = element_text(size=10), legend.title = element_text(size=10, face="plain"), legend.position = 'none')
+g <- g+xlab('Phospho-abundance (log10 ppm)')+ylab('No. of conditions')
+g <- g+theme(axis.text=element_text(size=5),axis.title=element_text(size=8.5,face="plain"),plot.title=element_text(size=14,face='plain'))
+
+x2_vec <- c(1,2,3,4,5,6,7,8,9)
+label2_data <- c(length(a),length(b),length(c),length(d),length(e),length(f),nrow(g_df),length(h),length(i))
+
+g <- g + theme(axis.title.x = element_text(vjust=5.0))
+g <- g + theme(axis.title.y = element_text(vjust=-2.0))
+g <- g + geom_text(data=data.frame(), aes(x2_vec, y=rep(460,9), label=label2_data), size=2.1, inherit.aes=F)
+g <- g + theme(axis.text.x = element_text(angle = 20, vjust = 0.9, hjust=0.85))
+g <- g + theme(plot.margin = unit(c(0,0.75,0.0,0), "cm")) # t, r, b, l
+g
+
+supp_fig_7a <- g
+supp_fig_7a_df <- phosphoabundance_df
+
+```
+
+# Subset for high abundance proteins (ppm > 100)
+
+```{r}
+
+# Iterate through each of the substrates and obtain their protein abundance
+# N.B. This object was created in the Fig 2b script -- need to use Fig 2B first
+
+Ishi_CK2_ensembl_ext_high_abun <- Ishi_CK2_ensembl_ext_abun[Ishi_CK2_ensembl_ext_abun[,8] > 2,]
+
+mss_vec <- Ishi_CK2_ensembl_ext_high_abun[,4]
+
+col1 <- NULL
+col2 <- NULL
+
+for (i in 0:8) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  
+  ck2_experiments <- Ishi_CK2_ensembl_ext_high_abun[mss_vec > lower & mss_vec <= upper,6]
+
+  
+  col1 <- c(col1, ck2_experiments)
+  col2 <- c(col2, rep(paste(lower,'-',upper,sep=''),length(ck2_experiments)))
+  
+}
+
+mss_data <- data.frame(col1,col2)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Experiments','SQ')
+
+mss_data_high <- mss_data
+
+```
+
+# Plot out the low and high abundance phosphoproteins together
+
+```{r}
+
+# High predicted phospho-abundance
+
+sharma_abundant <- i_df
+sharma_abundant[,2] <- rep('Phosphoproteome',length=nrow(i_df))
+label1 <- nrow(i_df)
+
+ck2_abundant <- mss_data_high
+ck2_abundant <- ck2_abundant[,c(1,2)]
+ck2_abundant <- ck2_abundant[ck2_abundant[,2] %in% c('0.6-0.7','0.7-0.8'),]
+ck2_abundant[,2] <- rep('CK2 sites',length=nrow(ck2_abundant))
+label2 <- nrow(ck2_abundant)
+
+colnames(sharma_abundant) <- c('Conditions','Class')
+colnames(ck2_abundant) <- c('Conditions','Class')
+
+sf3i_df <- rbind(sharma_abundant,ck2_abundant)
+sf3i_df$Class <- factor(sf3i_df$Class, levels = 
+c('Phosphoproteome','CK2 sites'))
+
+sf3i_df_high <- sf3i_df
+sf3i_df_high <- data.frame(sf3i_df_high,rep('High',nrow(sf3i_df_high)))
+colnames(sf3i_df_high) <- c('Conditions','Class','Abundance')
+
+# Low predicted phospho-abundance
+
+sharma_abundant <- f_df
+sharma_abundant[,2] <- rep('Phosphoproteome',length=nrow(f_df))
+label3 <- nrow(f_df)
+
+ck2_abundant <- mss_data_high
+ck2_abundant <- ck2_abundant[,c(1,2)]
+ck2_abundant <- ck2_abundant[ck2_abundant[,2] %in% c('0-0.1','0.1-0.2','0.2-0.3'),]
+ck2_abundant[,2] <- rep('CK2 sites',length=nrow(ck2_abundant))
+
+label4 <- nrow(ck2_abundant)
+
+colnames(sharma_abundant) <- c('Conditions','Class')
+colnames(ck2_abundant) <- c('Conditions','Class')
+
+sf3i_df <- rbind(sharma_abundant,ck2_abundant)
+sf3i_df$Class <- factor(sf3i_df$Class, levels = 
+c('Phosphoproteome','CK2 sites'))
+
+sf3i_df_low <- sf3i_df
+sf3i_df_low <- data.frame(sf3i_df_low,rep('Low',nrow(sf3i_df_low)))
+colnames(sf3i_df_low) <- c('Conditions','Class','Abundance')
+
+# Combine
+
+sf3i_df_all <- rbind(sf3i_df_high,sf3i_df_low)
+sf3i_df_all$Abundance <- factor(sf3i_df_all$Abundance, levels = c('Low','High'))
+
+##ggplot
+
+abun_names <- as_labeller(
+     c(`Low` = "Low phospho-abundance (predicted)", `High` = "High phospho-abundance (predicted)"))
+
+
+g <- ggplot(sf3i_df_all, aes(x = Class, y = Conditions, color=Class)) + geom_jitter(position=position_dodge(0.8),cex=1.4,alpha=0.20)
+#g <- g + geom_violin(color=c(colors()[261]),aes(fill=Class),lwd=0.75)
+g <- g + stat_summary(fun.data=median.quartile, 
+                 geom="pointrange", lwd=0.95, position = position_dodge(width = 0.6))
+g <- g+theme_bw()
+g <- g + scale_color_manual(values=my_colors[c(1,14)])
+g <- g + facet_grid(cols = vars(Abundance),labeller=abun_names)
+
+g <- g+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+g <- g+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+g <- g + theme(legend.text = element_text(size=10), legend.title = element_text(size=10, face="plain"), legend.position = 'none')
+g <- g+xlab('')+ylab('No. of conditions')
+g <- g+theme(axis.text=element_text(size=8.00),axis.title=element_text(size=8.5,face="plain"),plot.title=element_text(size=14,face='plain'))
+g <- g+theme(strip.text = element_text(size = 5.5))
+
+x3_vec <- c(1,2,1,2)
+label3_data <- c(label3,label4,label1,label2)
+
+g <- g + theme(axis.title.x = element_text(vjust=5.0))
+g <- g + theme(axis.title.y = element_text(vjust=-2.0))
+g <- g + geom_text(data=data.frame(label=label3_data, Abundance=factor(c('Low','Low','High','High'),levels=c('Low','High'))), aes(x3_vec, y=rep(460,4),label=label3_data), size=2.1, inherit.aes=F)
+g <- g + theme(plot.margin = unit(c(0,0.75,0.0,0), "cm")) # t, r, b, l
+
+supp_fig_7b <- g
+supp_fig_7b_df <- sf3i_df_all
+
+```
+
+
+
+
