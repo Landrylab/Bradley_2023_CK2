@@ -1,0 +1,124 @@
+---
+title: "Supplementary figure 7c 7d"
+author: "David Bradley"
+date: '2023-02-03'
+output: html_document
+---
+
+# CK2 pept_deep
+
+```{r}
+
+# Open up the spectral library from AlphaPeptDeep, where predictions were made
+# on phosphopeptides mapping to CK2 targets. Reformat the first column so that we 
+# can map the phosphopeptides
+
+# Predictions made from AlphaPeptDeep GUI using the library mode with default parameters
+
+spec_lib <- read.table('predict.speclib.tsv', head=T)
+spec_lib[,1] <- gsub('\\(Phospho\\)','\\(ph\\)',spec_lib[,1])
+spec_lib[,1] <- gsub('_','',spec_lib[,1])
+
+# open up the list of phosphopeptides prepared from the ochoa et al., 2016 data
+
+ochoa_phosphopeptides <- read.table('CK2_ochoa_phosphopepides.txt',head=T)
+
+sq_vec <- NULL # substrate quality
+im_vec <- NULL #ion mobility
+
+for (i in 1:nrow(ochoa_phosphopeptides)) {
+  
+  phosphopep <- ochoa_phosphopeptides[i,9]
+  phospholib <- spec_lib[spec_lib[,1] %in% phosphopep,]
+  ion_mob <- mean(phospholib[,4])
+  
+  sq <- ochoa_phosphopeptides[i,4]
+  
+  sq_vec <- c(sq_vec, sq)
+  im_vec <- c(im_vec,ion_mob)
+  
+}
+
+# Filter out SQ values for phosphopeptides where predictions could not be made from AlphaPeptDeep
+
+sq_vec <- sq_vec[!is.na(im_vec)]
+im_vec <- im_vec[!is.na(im_vec)]
+
+```
+
+# Supplementary figure 7c
+
+```{r}
+
+library(ggtext)
+
+sq_im_df <- data.frame(sq_vec,im_vec)
+colnames(sq_im_df) <- c('SQ','IM')
+
+p <- ggplot(sq_im_df, aes(x=SQ, y=IM)) + 
+  geom_point(size=0.85)+
+  geom_smooth(method=lm)
+
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=8.5,face="plain"),axis.title.y=element_text(size=8.5,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p+theme(legend.position="none")
+p <- p + xlab('Substrate quality') + ylab('ion mobility (AlphaPeptDeep)') + ggtitle('')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p <- p+geom_richtext(x=0.06, y=1.55, label='r<sub>s</sub> = 0.25',size=3.5,fontface='plain',col='black',label.color = NA)
+p <- p + theme(plot.margin = unit(c(0,0.75,0.0,0), "cm")) # t, r, b, l
+
+supp_fig_7c <- p
+
+```
+
+# Supplementary figure 7d
+
+```{r}
+
+library(ggtext)
+
+sq_im_df_30 <- data.frame(sq_vec[sq_vec > 0.3],im_vec[sq_vec > 0.3])
+colnames(sq_im_df_30) <- c('SQ','IM')
+
+p <- ggplot(sq_im_df_30, aes(x=SQ, y=IM)) + 
+  geom_point(size=0.85)+
+  geom_smooth(method=lm)
+
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=8.5,face="plain"),axis.title.y=element_text(size=8.5,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p+theme(legend.position="none")
+p <- p + xlab('Substrate quality') + ylab('ion mobility (AlphaPeptDeep)') + ggtitle('')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p <- p+geom_richtext(x=0.755, y=1.57, label='r<sub>s</sub> = 0.05',size=3.5,fontface='plain',col='black',label.color = NA)
+p <- p + theme(plot.margin = unit(c(0,0.75,0.0,0), "cm")) # t, r, b, l
+
+supp_fig_7d <- p
+
+```
+
+# Cowplot
+
+```{r}
+
+library(cowplot)
+
+sup_fig_7 <- plot_grid(supp_fig_7a,supp_fig_7b,supp_fig_7c,supp_fig_7d,ncol=2,rel_widths=c(1,1),labels=c('a','b','c','d'))
+ggsave(file='Supp_fig_7.pdf', plot=sup_fig_7, width=9, height=6.5)
+
+```
+
+
