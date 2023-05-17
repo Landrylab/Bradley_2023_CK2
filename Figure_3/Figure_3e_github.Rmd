@@ -1,0 +1,211 @@
+---
+title: "Figure 3e"
+output: html_document
+---
+
+# Known substrates of yeast CK2
+
+```{r}
+
+# Load in the known yeast CK2 substrates from BioGRID
+
+yeast_CK2_biogrid <- read.table('Copy of cka_candidates - Yeast_substrates_biogrid (pre-2011).tsv',head=T,sep='\t')
+yeast_biogrid_sites <- unique(yeast_CK2_biogrid[,4])
+yeast_biogrid_p1_p3 <- yeast_biogrid_sites[substr(yeast_biogrid_sites,9,9) %in% c('D','E') & substr(yeast_biogrid_sites,11,11) %in% c('D','E')]
+
+# Load in the known yeast CK2 substrates that were manually curated from the literarure (post-2011)
+
+yeast_CK2_post_2011 <- read.table('Copy of cka_candidates - Yeast_substrates_literature (post-2011).tsv',head=T,sep='\t',fill=T)
+yeast_post_2011_sites <- unique(yeast_CK2_post_2011[,5])
+yeast_post_2011_sites_p1_p3 <- yeast_post_2011_sites[substr(yeast_post_2011_sites,9,9) %in% c('D','E') & substr(yeast_post_2011_sites,11,11) %in% c('D','E')]
+
+###### Compile the substrates from the two sources
+
+library(stringr)
+
+yeast_ck2_all <- unique(c(yeast_biogrid_p1_p3,yeast_post_2011_sites_p1_p3))
+yeast_ck2_all <- substr(yeast_ck2_all,2,14)
+yeast_ck2_all_D <- str_count(yeast_ck2_all,'D')
+yeast_ck2_all_E <- str_count(yeast_ck2_all,'E')
+yeast_ck2_all_DE <- yeast_ck2_all_D+yeast_ck2_all_E
+
+```
+
+# Retrieve the known substrates of human CK2
+
+```{r}
+
+library(stringr)
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential hierarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+############################################################
+
+# Restrict in the range of -6 to +6
+
+psite_no_heira <- substr(psite_no_heira,2,14)
+
+# Remove any sites with a gap in them
+
+psite_no_heira <- psite_no_heira[-grep('_',psite_no_heira)]
+
+```
+
+# We now want a bar plot of the yeast distribution and the human distribution
+
+```{r}
+
+# Human count
+
+psite_no_heira <- unique(psite_no_heira)
+p1_dex <- substr(psite_no_heira,8,8) %in% c('D','E')
+p3_dex <- substr(psite_no_heira,10,10) %in% c('D','E')
+ck2_minimal <- psite_no_heira[p1_dex & p3_dex]
+DE_count <- str_count(ck2_minimal, pattern='E')+str_count(ck2_minimal, pattern='D')
+
+# Yeast count
+
+yeast_ck2_all_DE
+
+# Substract 2 from both
+
+yeast_count <- yeast_ck2_all_DE-2
+human_count <- DE_count-2
+
+human_table <- unname(table(human_count))
+yeast_table <- unname(table(yeast_count))
+yeast_table <- c(0,yeast_table,0)
+
+yeast_count_freq <- table(yeast_count)/sum(table(yeast_count))
+human_count_freq <- table(human_count)/sum(table(human_count))
+
+yeast_count_freq <- c(0,yeast_count_freq,0)
+names(yeast_count_freq) <- 0:9
+
+# Generate histogram
+
+DE_count_df <- data.frame(c(human_count,yeast_count),
+                          c(rep('human',length(human_count)),rep('yeast',length(yeast_count))))
+
+colnames(DE_count_df) <- c('count','species')
+
+#######
+
+p <- ggplot(DE_count_df, aes(x=count, fill=species)) + geom_histogram(aes(y=..density..), bins = 10,position='identity',alpha=0.5)
+p <- p + scale_x_continuous(breaks=seq(0,9,1))
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+p <- p + ylab("") + xlab("") + ggtitle('')
+p <- p + scale_fill_manual(values=c(colors()[617], "#E69F00"))
+
+p <- p+geom_text(x=7.00, y=0.12, label='n = 213',size=4,fontface='plain',col=colors()[617],check_overlap=T)
+p <- p+geom_text(x=7.75, y=0.08, label='n = 44',size=4,fontface='plain',col="#E69F00",check_overlap = T)
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+ggsave(file='Figure_3e.pdf', plot=p, width=7.0, height=5.5)
+
+```
