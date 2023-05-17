@@ -1,0 +1,54 @@
+---
+title: "Figure 2 cowplot"
+output: html_document
+---
+
+# Plot figure2c
+
+```{r}
+
+library(ggtext)
+
+fc_df <- readRDS('Fig2c_mss_data.rds')
+
+p <- ggplot(fc_df, aes(x=SQ, y=reg)) + geom_point(color='black',fill=colors()[131], stroke=1, shape=21, alpha=0.4, size=3.8) 
+p <- p+theme_bw() 
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=9.0,face="plain"),axis.title.y=element_text(size=9.0,face="plain"),plot.title=element_text(size=10.5,face='bold'))
+p <- p + xlab('Substrate quality') + ylab('log2-fc (median)') + ggtitle('Downregulation')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p <- p + theme(legend.title=element_text(size=8.5),legend.text = element_text(size=10))
+p <- p + theme(axis.title.x = element_text(vjust=5.0))
+p <- p+geom_richtext(x=0.68, y=-1.5, label='r<sub>s</sub> = -0.44',size=3.0,fontface='plain',col='black',label.color = NA)
+
+figure_2c <- p
+
+```
+
+
+```{r}
+
+# Put everything together with Cowplot
+
+library(cowplot)
+setwd("~/Documents/Work/CK2_MS_submission_2022/Figure_2")
+
+#4a
+
+m <- ggdraw() + draw_image('Figure_2F_crop.png',width=1.0,height=1.0,clip='on',hjust=-0.03,vjust=0.035)
+figure_2f <- plot_grid(m,greedy=F)
+
+g1 <- plot_grid(figure_2a,figure_2b,figure_2c,ncol=3,nrow=1,align='h',rel_widths=c(0.70,1.0,0.8), labels=c('a','b','c'))
+
+g2 <- plot_grid(figure_2d,figure_2e,figure_2f,ncol=3,nrow=1,rel_widths=c(0.8,0.8,1), labels=c('d','e','f'))
+
+g3 <- plot_grid(g1,g2,nrow=2,align='v')
+
+ggsave(file='Figure_2_v6.pdf', plot=g3, width=10, height=5.8)
+
+```
+
