@@ -726,29 +726,29 @@ colnames(mss_data) <- c('EvoRate','Positions')
   return(out) 
 }
 
-  p <- ggplot(mss_data, aes(x=Positions, y=EvoRate)) + geom_violin(fill='white',color='black', lwd=1.05)
-  p <- p +stat_summary(
-      fun.data = median.quartile, color = colors()[180], lwd=0.90)
-  
-  # Font
-  p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
-  
-  # Ticks
-  p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
-  
-  p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
-  p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
-  p <- p+theme(plot.title = element_text(hjust = 0.5))
-  p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
-  p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red")
-  
-  # Add the sample sizes
-  
-  p <- p+geom_text(data=data.frame(), aes(x=c(1:8), y=rep(3.5,8)), label=c(unname(table(mss_data[,2]))),col=colors()[190], fontface='plain', size=3.0)
-  
-  ggsave(file='Figure_4c.pdf', plot=p, width=6.5, height=4.8)
-  
-  saveRDS(mss_data,'Fig_4c_data.rds')
+p <- ggplot(mss_data, aes(x=Positions, y=EvoRate)) + geom_violin(fill='white',color='black', lwd=1.05)
+p <- p +stat_summary(
+    fun.data = median.quartile, color = colors()[180], lwd=0.90)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+# Add the sample sizes
+
+p <- p+geom_text(data=data.frame(), aes(x=c(1:8), y=rep(3.5,8)), label=c(unname(table(mss_data[,2]))),col=colors()[190], fontface='plain', size=3.0)
+
+ggsave(file='Figure_4c.pdf', plot=p, width=6.5, height=4.8)
+
+saveRDS(mss_data,'Fig_4c_data.rds')
 
 ```
 
