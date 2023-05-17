@@ -667,7 +667,6 @@ colnames(GOtable_minimal_xlsx) <- c('GO.ID','Term','Annotated','Significant','Ex
 
 library(xlsx)
 
-
 write.xlsx(GOtable_minimal_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Minimal", col.names = TRUE, row.names = TRUE, append = FALSE)
 write.xlsx(GOtable_intermediate_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Intermediate", col.names = TRUE, row.names = TRUE, append = TRUE)
 write.xlsx(GOtable_optimal_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Optimal", col.names = TRUE, row.names = TRUE, append = TRUE)
