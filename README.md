@@ -21,4 +21,5 @@ Notes:
 - For Figure 2, phosphoproteome condition data was sourced from http://phosfate.com/ 
 - For Figure 2, some of the cka1/cka2 interaction data was sourced from BioGRID: https://thebiogrid.org/
 - For Figure 2, the regulation data (Table S1 and S6) was sourced from: https://doi.org/10.1101/2022.10.23.513432
+- Protein RSA/disorder data was sourced from: https://github.com/normandavey/ProcessedAlphafold
 
