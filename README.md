@@ -15,3 +15,8 @@ Supplementary figures 1 and 5 are fairly self-contained and so have independent 
 - Figure_S1: Supplementary figure 1
 - Figure S5: Supplementary figure 5
 
+Notes: 
+
+- For Figure 2, the cell cycle data was sourced from supplementary table 2 of https://pubmed.ncbi.nlm.nih.gov/20068231/
+- For Figure 2, phosphoproteome condition data was sourced from http://phosfate.com/ 
+
