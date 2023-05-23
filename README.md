@@ -12,11 +12,13 @@ Contents are as follows:
 
 Supplementary figures 1 and 5 are fairly self-contained and so have independent folders:
 
-- Figure_S1: Supplementary figure 1
+- Figure S1: Supplementary figure 1
 - Figure S5: Supplementary figure 5
 
 Notes: 
 
 - For Figure 2, the cell cycle data was sourced from supplementary table 2 of https://pubmed.ncbi.nlm.nih.gov/20068231/
 - For Figure 2, phosphoproteome condition data was sourced from http://phosfate.com/ 
+- For Figure 2, some of the cka1/cka2 interaction data was sourced from BioGRID: https://thebiogrid.org/
+- For Figure 2, the regulation data (Table S1 and S6) was sourced from: https://www.biorxiv.org/content/10.1101/2022.10.23.513432v1.abstract
 
