@@ -220,16 +220,17 @@ ED_weight <- function(psite,pwm) {
 source('match-tm.r')
 
 publication_pwm <- makePWM(substr(psite_no_heira,2,14))[1:20,]
-publication_pwm[!rownames(publication_pwm) %in% c('D','E'),!colnames(publication_pwm) %in% c(7)] <- 0
+#publication_pwm[!rownames(publication_pwm) %in% c('D','E'),!colnames(publication_pwm) %in% c(7)] <- 0
 colnames(publication_pwm) <- -6:6
 
-g <- ggseqlogo(publication_pwm, method='custom', seq_type='aa') + ylab('')
+g <- ggseqlogo(publication_pwm, method='custom', seq_type='aa') + ylab('Probability')
 g <- g + theme(text=element_text(family="Ubuntu Light", face="plain", size=8))
 g <- g + theme(legend.position = 'none') + ggtitle('')
 g <- g+theme(plot.title = element_text(hjust = 0.5,size=18,face='plain'))
-g <- g + theme(axis.text=element_text(size=12),axis.title=element_text(size=18,face="plain"),axis.text.y = element_blank())
+g <- g + theme(axis.text.x=element_text(size=10.0),axis.text.y=element_text(size=7.5),axis.title.y=element_text(size=11.5,face="plain"))
 g$scales$scales[[1]] <- scale_x_continuous(breaks=1:13,labels=colnames(publication_pwm))
 g <- g+theme(plot.margin = unit(c(0,1.0,0.0,1.0), "cm"))
+g <- g+theme(aspect.ratio=0.75)
 fig_1b <- g
 fig_1b
 
@@ -340,7 +341,7 @@ mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
 mss_data[,2] <- as.factor(mss_data[,2])
 colnames(mss_data) <- c('Stoichiometry','Positions')
 
-p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[35], lwd=1.15, notch=FALSE,fatten=0.75) + geom_jitter(width = 0.2, color=colors()[35],size=0.6) 
+p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[35], lwd=0.90, notch=FALSE,fatten=0.75,outlier.shape=NA,width=0.6) + geom_jitter(width = 0.2, color=colors()[35],size=0.6) 
 
 # Font
 p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
@@ -350,7 +351,7 @@ p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(mar
 
 p <- p + ylab("Stoichiometry") + xlab("Substrate quality") + ggtitle('')
 p <- p + theme(axis.title.y = element_text(vjust=-1.5))
-p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(axis.text.x=element_text(size=7),axis.text.y=element_text(size=8.85),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
 p <- p+theme(plot.title = element_text(hjust = 0.5))
 p <- p + theme(legend.position = "none") #  
 p <- p + theme(plot.margin = unit(c(0,0,0.1,0), "cm")) # t, r, b, l

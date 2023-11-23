@@ -1,0 +1,115 @@
+---
+title: "Hugo CK2 array"
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+
+# Read in data (independent WT peptides)
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+ck2_peptide_library <- read_xlsx('CK2_peptides_library.xlsx', skip=0, col_names=TRUE, sheet=1)
+ck2_peptide_array <- read_xlsx('CK2_peptides_library.xlsx', skip=0, col_names=TRUE, sheet=2)
+
+# Calculate the minimum non-0 phosphorylation across the peptide array
+
+ck2_peptide_array <- as.data.frame(ck2_peptide_array)
+min_phos <- min(as.numeric(ck2_peptide_array[ck2_peptide_array != 0]),na.rm=T)
+
+# Keep the WT and mutant peptide data but discard the data pertaining to orthologues
+ck2_peptide_library <- ck2_peptide_library[476:nrow(ck2_peptide_library),]
+ck2_peptide_library <- as.data.frame(ck2_peptide_library)
+
+# WT and mutant peptides
+MSS <- as.numeric(ck2_peptide_library[,4])
+phosphosignal <- as.numeric(ck2_peptide_library[,6])
+
+# Remove NAs
+phosphosignal <- phosphosignal[!is.na(MSS)] # Sample size is N=279
+MSS <- MSS[!is.na(MSS)] # Sample size is N=279
+
+# For 0 values, since we cannot take logarithms of them, set to minimum phosphorylation that was found across the peptide array
+MSS <- MSS
+phosphosignal[phosphosignal == 0] <- min_phos
+
+# Take logs and then plot
+phosphosignal <- log(phosphosignal,base=10)
+
+```
+
+# Use ggplot to generate a plot of the regression
+
+```{r}
+
+library(ggplot2)
+library(ggtext)
+
+hugo_array <- data.frame(MSS,phosphosignal)
+colnames(hugo_array) <- c('MSS','phosphosignal')
+
+ED_list <- list()
+col1 <- NULL
+col2 <- NULL
+col3 <- NULL
+
+for (i in 0:9) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  print(lower)
+  print(upper)
+  
+  ED_phos <- hugo_array[hugo_array[,1] > lower & hugo_array[,1] <= upper,2]
+  ED_phos <- ED_phos[!ED_phos == 'NaN']
+  ED_list <- c(ED_list, list(ED_phos))
+  
+  col1 <- c(col1,ED_phos)
+  col2 <- c(col2,rep(paste(lower,'-',upper,sep=''),length(ED_phos)))
+  col3 <- c(col3,hugo_array[hugo_array[,1] > lower & hugo_array[,1] <= upper,1])
+}
+
+mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Stoichiometry','Positions')
+
+p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[132], lwd=0.90, notch=FALSE,fatten=0.75,outlier.shape=NA,width=0.6) + geom_jitter(width = 0.2, color=colors()[132],size=0.6) 
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("log10(phosphorylation)") + xlab("Substrate quality") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),
+             axis.text.y=element_text(size=9.15),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") #  
+p <- p + theme(plot.margin = unit(c(0,0,0.1,0), "cm")) # t, r, b, l
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.0, hjust=1))
+p <- p+geom_richtext(x=7.5, y=2.85, label='r<sub>s</sub> = 0.61',size=3.5,fontface='plain',col='black',label.color = NA)               
+fig_1d <- p
+
+ggsave(file='Figure_1D.pdf', plot=p, width=5, height=4)
+
+
+```
+
