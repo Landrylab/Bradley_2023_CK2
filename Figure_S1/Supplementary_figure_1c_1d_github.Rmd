@@ -1,0 +1,126 @@
+---
+title: "Supplementary figure 1c and 1d"
+author: "David Bradley"
+date: "12711/2023"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Load in the data for CK2 from Sugiyama et al., 2019 (MS/MS) and then visualise the logo
+
+```{r}
+
+literature_pwms <- readRDS('Sugiyama_PWMs_disorder_weighted.rds')
+
+csnk2_pwm_1 <- literature_pwms$`CK2a1, N=96`
+csnk2_pwm_2 <- literature_pwms$`CK2a2, N=364`
+csnk2_pwm <- (csnk2_pwm_1+csnk2_pwm_2)/2
+csnk2_pwm <- csnk2_pwm[,2:14]
+
+# Ignore negative selectivity at the phosphoacceptor (not biologically meaningful)
+
+csnk2_pwm[csnk2_pwm[,7] < 0,7] <- 0
+
+logo <- ggseqlogo(csnk2_pwm, method='custom', seq_type='aa')
+logo <- logo + theme(text=element_text(family="Ubuntu Light", face="plain"))
+logo <- logo+ggtitle('MS/MS-based PWM')+theme(plot.title = element_text(hjust = 0.5))+theme(legend.position = "none")
+logo <- logo+theme(plot.title = element_text(size=22,face='bold'),axis.title=element_text(size=18,face="bold"))
+logo <- logo+ylab('Log2(Selectivity)')
+logo <- logo+geom_segment(aes(x=0.5,xend=13.5,y=0,yend=0),size=1.1)
+logo <- logo + theme(axis.text.x=element_text(size=9),axis.title.y=element_text(size=10,face="plain"),axis.text.y = element_text(size=10),
+                     plot.title=element_text(size=11,face='bold'))
+logo$scales$scales[[1]] <- scale_x_continuous(breaks=1:13,labels=as.character(-6:6))
+logo
+  
+sup_fig_1c <- logo
+
+```
+
+# Load in the data for CK2 from Johnson et al., 2023 (MS/MS) and then visualise the logo
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+cantley_pwms <- read_xlsx('Cantley_PWMs.xlsx', skip=0, col_names=TRUE, sheet=4)
+cantley_pwms <- as.data.frame(cantley_pwms)
+rownames(cantley_pwms) <- cantley_pwms[,1]
+cantley_pwms <- cantley_pwms[,-1]
+cantley_ck2_1 <- matrix(unlist(cantley_pwms[rownames(cantley_pwms) == 'CK2A1',]),nrow=23)
+cantley_ck2_2 <- matrix(unlist(cantley_pwms[rownames(cantley_pwms) == 'CK2A2',]),nrow=23)
+cantley_ck2 <- (cantley_ck2_1+cantley_ck2_2)/2 
+colnames(cantley_ck2) <- c(-5,-4,-3,-2,-1,1,2,3,4)
+rownames(cantley_ck2) <- substr(colnames(cantley_pwms)[1:23],3,3)
+cantley_ck2 <- cantley_ck2[1:20,]
+ck2_pwm <- cantley_ck2
+ck2_pwm <- log2(ck2_pwm)
+
+# We will have to use a special formula (from Supplementary Note 1) to extract the 
+# phosphoacceptor favorability ratios
+
+cantley_pwms <- read_xlsx('Cantley_PWMs.xlsx', skip=0, col_names=TRUE, sheet=2)
+cantley_pwms <- as.data.frame(cantley_pwms)
+rownames(cantley_pwms) <- cantley_pwms[,1]
+cantley_pwms <- cantley_pwms[,-1]
+cantley_ck2_1 <- matrix(unlist(cantley_pwms[rownames(cantley_pwms) == 'CK2A1',]),nrow=23)
+cantley_ck2_2 <- matrix(unlist(cantley_pwms[rownames(cantley_pwms) == 'CK2A2',]),nrow=23)
+cantley_ck2 <- (cantley_ck2_1+cantley_ck2_2)/2 
+colnames(cantley_ck2) <- c(-5,-4,-3,-2,-1,1,2,3,4)
+rownames(cantley_ck2) <- substr(colnames(cantley_pwms)[1:23],3,3)
+cantley_ck2 <- cantley_ck2[1:20,]
+
+SS <- sum(cantley_ck2[5,]) # sum of the fixed serine at all positions
+ST <- sum(cantley_ck2[6,]) # sum of the fixed serine at all positions
+
+S_ctrl <- 0.75*SS-0.25*ST
+T_ctrl <- 0.75*ST-0.25*SS
+
+S0 <- S_ctrl/(max(S_ctrl,T_ctrl))
+T0 <- T_ctrl/(max(S_ctrl,T_ctrl))
+
+# Set the S and T heights relative to the height of the maximum heights in the flanks
+
+max_height <- max(apply(ck2_pwm,2, function(x) sum(x[x>0]))) # maximum positive height 
+S0_weight <- max_height*(S0/(S0+T0))
+T0_weight <- max_height*(T0/(S0+T0))
+
+# Modify the matrix to incorporate the phosphoacceptor position
+
+ck2_pwm <- cbind(ck2_pwm[,1:5],rep(0,20),ck2_pwm[,6:9])
+ck2_pwm[5,6] <- S0_weight
+ck2_pwm[6,6] <- T0_weight
+
+# Ignore negative selectivity at the phosphoacceptor (not biologically meaningful)
+
+logo <- ggseqlogo(ck2_pwm, method='custom', seq_type='aa')
+logo <- logo + theme(text=element_text(family="Ubuntu Light", face="plain"))
+logo <- logo+ggtitle('Peptide array-based PWM')+theme(plot.title = element_text(hjust = 0.5))+theme(legend.position = "none")
+logo <- logo+theme(plot.title = element_text(size=22,face='bold'),axis.title=element_text(size=18,face="bold"))
+logo <- logo+ylab('Log2(Selectivity)')
+logo <- logo+geom_segment(aes(x=0.5,xend=10.5,y=0,yend=0),size=1.1)
+logo <- logo + theme(axis.text.x=element_text(size=9),axis.title.y=element_text(size=10,face="plain"),axis.text.y = element_text(size=10),
+                     plot.title=element_text(size=11,face='bold'))
+logo$scales$scales[[1]] <- scale_x_continuous(breaks=1:10,labels=as.character(-5:4))
+logo
+  
+sup_fig_1d <- logo
+
+```
+
+
+
