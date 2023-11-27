@@ -1,0 +1,22 @@
+---
+title: "Supplementary figure 1 (Cowplot)"
+author: "David Bradley"
+date: "27/11/2023"
+output: html_document
+---
+
+# Supplementary figure 1 (Cowplot)
+
+```{r}
+
+library(cowplot)
+
+g <- plot_grid(supp_fig_1a_left,supp_fig_1a_right,ggplot() + theme_void(),sup_fig_1b,sup_fig_1c,ggplot() + theme_void(),rel_widths=c(1,1,0.8),nrow=2,ncol=3,
+               labels=c('A','B','E','C','D','F'))
+ggsave(file='Supplementary_figure_1_R.pdf', plot=g, width=8.5, height=5.0)
+
+```
+
+
+
+
