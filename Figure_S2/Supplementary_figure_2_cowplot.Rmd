@@ -1,0 +1,23 @@
+---
+title: "Supplementary figure 1 (Cowplot)"
+author: "David Bradley"
+date: "27/11/2023"
+output: html_document
+---
+
+# Supplementary figure 1 (Cowplot)
+
+```{r}
+
+library(cowplot)
+
+g1 <- plot_grid(supp_fig_2a_olsen,supp_fig_2a_wu,supp_fig_2a_sharma,supp_fig_2B,supp_fig_2c,supp_fig_2d,rel_widths=c(1,1,1,1,0.5,0.5),nrow=2,ncol=3,
+               labels=c('A','B','E','C','D','F'))
+g1 <- plot_grid(supp_fig_2a_olsen,supp_fig_2a_wu,supp_fig_2a_sharma,rel_widths=c(1,1,1),nrow=1,ncol=3,
+               labels=c('A','',''))
+g2 <- plot_grid(supp_fig_2B,supp_fig_2c,supp_fig_2d,rel_widths=c(1,0.45,0.45),nrow=1,ncol=3,
+               labels=c('C','D','E'))
+g3 <- plot_grid(g1,g2,nrow=2)
+
+ggsave(file='/home/david/Documents/Work/CK2_revisions/Supplementary_figure_2/Supplementary_figure_2.pdf',plot=g3,width=8.5,height=5.5)
+

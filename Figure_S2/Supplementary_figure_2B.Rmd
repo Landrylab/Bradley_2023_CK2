@@ -1,0 +1,406 @@
+---
+title: "Supplementary Figure 2B"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Set up the scoring function for the CK2 substrate quality
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools (which could refelect indirect relationships)
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the sequences
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# After removing potential heirarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Construct PWM using basic method
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+ggseqlogo(substr(psite_no_heira,2,14),method='probability')
+
+# Substrate quality scoring function
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# Load in the stoichiometry data from Tsai et al., 2015
+
+```{r}
+
+library(stringr)
+
+Ishi <- read.xls('Ishihama_stoichiometry.xlsx',sheet=2, stringsAsFactors=FALSE)
+
+## Important to conisder whether or not to exclude '0' stoichiometry sites!
+
+Ishi <- Ishi[!Ishi[,8] == 0,]
+Ishi_CK2 <- Ishi[grep('CK2',Ishi[,18]),]
+
+# Doubly phosphorylated peptides are potential confounders and should be removed
+Ishi_CK2 <- Ishi_CK2[!Ishi_CK2[,3] == '2 Phospho (ST)',]
+
+# Negative charge scoring function
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+# Score all non-hierarchical sites with the MSS and then plot
+
+Ishi_CK2_stoi <- Ishi_CK2[,c(8,9)]
+
+# Remove all potential heirarchical sites and T sites
+p1s <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[8]) == 'S'
+p3s <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[10]) == 'S'
+p0t <- rapply(strsplit(Ishi_CK2_stoi[,2],split=''), function(x) x[7]) == 'T'
+Ishi_CK2_stoi <- Ishi_CK2_stoi[!(p1s|p3s|p0t),]
+
+# Score each site individually
+
+mss_vec <- NULL
+
+for (i in 1:nrow(Ishi_CK2_stoi)) {
+  
+  mss <- NULL
+  ck2_site <- Ishi_CK2_stoi[i,2]
+  mss <- ED_weight(ck2_site,csnk2_pwm)
+  if (length(mss) == 0) {break}
+  mss_vec <- c(mss_vec, mss)
+  
+}
+
+Ishi_CK2_stoi <- cbind(Ishi_CK2_stoi, mss_vec)
+
+```
+
+## Here we obtain stoichiometry measurements for all phosphoites with 2 D/E and then divide them into two groups depending
+## on whether they match the consensus S-D/E-x-D/E motif or not
+
+```{r}
+
+library(stringr)
+
+E_count <- str_count(Ishi_CK2_stoi[,2],'E')
+D_count <- str_count(Ishi_CK2_stoi[,2],'D')
+ED_count <- E_count+D_count
+
+# ED_count 2
+
+ED_2 <- Ishi_CK2_stoi[which(ED_count == 2),]
+
+ED_2_psite <- ED_2[,2]
+ED_2_stoi <- ED_2[,1]
+
+# Sites matching the S-D/E-x-D/E consensus
+
+p1_p3_dex <- rapply(strsplit(ED_2_psite,split=''), function(x) x[8]) %in% c('D','E') & rapply(strsplit(ED_2_psite,split=''), function(x) x[10]) %in% c('D','E')
+
+# Sites not matching the S-D/E-x-D/E consensus
+
+p1_p3_antidex <- !p1_p3_dex
+
+# Stoichiometry of such sites
+
+ED_2_stoi_p1_p3 <- ED_2_stoi[p1_p3_dex]
+ED_2_stoi_p1_p3_anti <- ED_2_stoi[p1_p3_antidex]
+
+# Generate the data frame and then plot using GGplot
+
+ED_2_DF <- data.frame(c(ED_2_stoi_p1_p3_anti,ED_2_stoi_p1_p3),c(rep('Minimal \n (2 D/E)',length(ED_2_stoi_p1_p3_anti)),rep('Optimal \n (2 D/E)',length(ED_2_stoi_p1_p3))))
+colnames(ED_2_DF) <- c('Stoichiometry','Motif')
+
+####
+
+p <- ggplot(ED_2_DF, aes(x=Motif, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75,width=0.3,outlier.shape = NA) + geom_jitter(width = 0.2, color=colors()[35],size=0.8) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("Stoichiometry") + xlab("") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(axis.text=element_text(size=9),axis.title=element_text(size=12.25,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+#p <- p + theme(plot.margin = unit(c(0,0.2,0.0,-1.175), "cm")) # t, r, b, l
+p <- p+ylim(0,110)
+p <- p+geom_text(data=data.frame(), aes(x=c(1:2), y=rep(110,2), label=c(length(ED_2_stoi_p1_p3_anti),length(ED_2_stoi_p1_p3)), size=1.2),col=colors()[190], fontface='plain')
+p <- p + theme(plot.margin = unit(c(-0.45,0.2,-0.25,0), "cm")) # t, r, b, l
+p1 <- p
+p1
+
+# Save file
+
+ggsave(file='Figure_1_ED_2_control.pdf', plot=p, width=3.0, height=4.8)
+
+```
+
+## Here we obtain stoichiometry measurements for all phosphoites with 3 D/E and then divide them into two groups depending
+## on whether they match the consensus S-D/E-x-D/E motif or not
+
+```{r}
+
+library(stringr)
+
+E_count <- str_count(Ishi_CK2_stoi[,2],'E')
+D_count <- str_count(Ishi_CK2_stoi[,2],'D')
+ED_count <- E_count+D_count
+
+# Psites with 3 D/E
+
+ED_3 <- Ishi_CK2_stoi[which(ED_count == 3),]
+
+ED_3_psite <- ED_3[,2]
+ED_3_stoi <- ED_3[,1]
+
+# Sites matching the S-D/E-x-D/E consensus
+p1_p3_dex <- rapply(strsplit(ED_3_psite,split=''), function(x) x[8]) %in% c('D','E') & rapply(strsplit(ED_3_psite,split=''), function(x) x[10]) %in% c('D','E')
+# Sites not matching the S-D/E-x-D/E consensus
+p1_p3_antidex <- !p1_p3_dex
+
+# Stoichiometry of such sites
+
+ED_3_stoi_p1_p3 <- ED_3_stoi[p1_p3_dex]
+ED_3_stoi_p1_p3_anti <- ED_3_stoi[p1_p3_antidex]
+
+# DF
+
+ED_3_DF <- data.frame(c(ED_3_stoi_p1_p3_anti,ED_3_stoi_p1_p3),c(rep('Minimal \n (3 D/E)',length(ED_3_stoi_p1_p3_anti)),rep('Optimal \n (3 D/E)',length(ED_3_stoi_p1_p3))))
+colnames(ED_3_DF) <- c('Stoichiometry','Motif')
+
+####
+
+p <- ggplot(ED_3_DF, aes(x=Motif, y=Stoichiometry)) + geom_boxplot(fill='white',color=colors()[190], lwd=1.25, notch=FALSE,fatten=0.75,width=0.3, outlier.shape=NA) + geom_jitter(width = 0.2, color=colors()[35],size=0.8) #colors()[123]
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length.x=unit(-0.10, "cm"),axis.ticks.length.y=unit(0.0, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("") + xlab("") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p + theme(panel.border= element_blank())
+p <- p +  theme(axis.text.y=element_blank())
+p <- p+theme(axis.text=element_text(size=9),axis.title=element_text(size=13,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank()) 
+#p <- p + theme(plot.margin = unit(c(0,0,0,-0.15), "cm")) # t, r, b, l
+p <- p+ylim(0,110)
+p <- p+geom_text(data=data.frame(), aes(x=c(1:2), y=rep(110,2), label=c(length(ED_3_stoi_p1_p3_anti),length(ED_3_stoi_p1_p3)), size=1.2), col=colors()[190], fontface='plain')
+p <- p + theme(plot.margin = unit(c(-0.45,0.5,-0.25,0), "cm")) # t, r, b, l
+p2 <- p
+
+ggsave(file='Figure_1_ED_3_control.pdf', plot=p, width=3.0, height=4.8)
+
+```
+
+# Combine plots
+
+```{r}
+
+library(cowplot)
+
+title <- ggdraw() + 
+  draw_label(
+    "                                              Tsai et al., 2015 (human)",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0,
+    size=10.3,
+    fontfamily = 'Ubuntu Light'
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 0)
+  )
+
+plot_rows <- plot_grid(p1, p2, ncol = 2, align = "h")
+supp_fig_2B <- plot_grid(title, plot_rows,ncol = 1, rel_heights = c(0.05, 1))
+supp_fig_2B
+
+ggsave(file='Supplementary_figure_2B.pdf', plot=supp_fig_2B, width=6.0, height=4.8)
+
+```
+
