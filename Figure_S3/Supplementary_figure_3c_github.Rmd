@@ -1,0 +1,76 @@
+---
+title: "Supplementary figure 3c"
+author: "David Bradley"
+date: "04/12/2023"
+output: html_document
+---
+
+# Load in the CK2 substrate data that has been combined with the Johnson 2023 data (Nature):
+
+```{r}
+
+# load in data
+
+ck2_sites_johnson <- readRDS('ck2_sites_Johnson_2023.rds')
+
+# Remove candidate hierarchical sites
+
+phiera_dex <- substr(ck2_sites_johnson[,6],9,9) %in% c('S') | substr(ck2_sites_johnson[,6],11,11) %in% c('S') 
+
+ck2_sites_johnson <- ck2_sites_johnson[-phiera_dex,]
+
+# Remove sites with 0 substrate quality
+
+ck2_sites_johnson <- ck2_sites_johnson[ck2_sites_johnson[,7] > 0,]
+
+# Sites that are over the 90th percentile for ck2a1
+
+ck2a1_dex <- which(ck2_sites_johnson[,11] >= 90)
+ck2a2_dex <- which(ck2_sites_johnson[,13] >= 90)
+
+# remove predicted ck2a1/ck2a2 substrates from the promiscuity index
+
+ck2_sites_johnson[ck2a1_dex,8] <- ck2_sites_johnson[ck2a1_dex,8]-1
+ck2_sites_johnson[ck2a2_dex,8] <- ck2_sites_johnson[ck2a2_dex,8]-1
+
+```
+
+# Relationship between substrate quality and promiscuity
+
+```{r}
+
+plot(ck2_sites_johnson[,7],ck2_sites_johnson[,8])
+
+
+## ggplot the correlation
+
+p <- ggplot(ck2_sites_johnson,aes(x=mss_vec,y=ck2_promiscuity)) + geom_point(size=1) # Warning message is for sites with NA promiscuity 
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+p <- p+theme(panel.border = element_blank())
+p <- p + coord_cartesian(xlim=c(0,1))
+p <- p + xlab('Substrate quality') + ylab('Substrate promiscuity (predicted)')
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p+theme(axis.text.x=element_text(size=9.5),axis.text.y=element_text(size=10.5),axis.title.x=element_text(size=11.5,face="plain"),axis.title.y=element_text(size=10.75,face="plain"),plot.title=element_text(size=18,face='bold'))
+
+supp_fig_3c <- p
+
+```
+
+# cowplot of the three figure panels
+
+```{r}
+
+library(cowplot)
+
+supp_fig_3_row_1 <- plot_grid(supp_fig_3a, supp_fig_3b, ncol = 2, labels=c('A','B',''))
+supp_fig_3_row_2 <- plot_grid(ggplot()+theme_void(), supp_fig_3c ,ggplot()+theme_void(), rel_widths=c(0.25,0.5,0.25), ncol = 3, labels=c('','C',''))
+supp_fig_3 <- plot_grid(supp_fig_3_row_1,supp_fig_3_row_2,nrow=2)
+ggsave(file='Supplementary_figure_3.pdf', plot=supp_fig_3, width=8.5, height=6.5)
+
+```
+
+
+
