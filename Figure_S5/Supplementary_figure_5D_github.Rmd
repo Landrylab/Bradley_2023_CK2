@@ -1,0 +1,294 @@
+---
+title: "Supplementary figure 5D"
+author: "David Bradley"
+date: "06/12/2023"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Retrieve CK2 substrates and set up function to calculate the substrate quality
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+library(stringr)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr))
+
+# Human proteome
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the sequences
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential heirarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Retrieve the corresponding database records
+
+csnk2a_ksr_no_heira <- csnk2a_ksr[index_vec[!(p1s|p3s)],]
+csnk2a_ksr_no_heira <- cbind(csnk2a_ksr_no_heira,psite_no_heira)
+
+# Generate the PWM
+
+source('match-tm.r')
+
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Function for calculating the CK2 substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(apply(pwm[,c(1:6,8:13)],2,max))
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# Ishihama neighbours of human CK2 (on the basis of proximity labelling)
+
+```{r}
+
+library(gdata)
+
+Ishi_CK2_BioID <- read.xls('Ishihama_CK2_BioID.xlsx',sheet=3, stringsAsFactors = FALSE, head = TRUE, skip = 2)
+
+Ishi_CK2_BioID <- Ishi_CK2_BioID[Ishi_CK2_BioID[,24] > 0,]
+
+# Take top 407 CK2 interactors (these are classified as CK2 neighbours according to Niinae et al., 2021)
+
+Ishi_CK2_BioID_significant <- Ishi_CK2_BioID[order(Ishi_CK2_BioID[,25],decreasing=T),][1:407,]
+CK2_BioID_accessions <- rapply(strsplit(Ishi_CK2_BioID_significant[,3],split='\\|'), function(x) x[2])
+
+```
+
+# Overlap the known interactors of CK2 (BioID) with the human cell cycle phosphoproteome data
+
+```{r}
+
+library(stringr)
+library(readxl)
+library(seqinr)
+library(gdata)
+
+# Retrieve the CK2 interactors
+
+csnk2_int <- CK2_BioID_accessions
+
+##### Read in the Olsen data
+
+Olsen_S2 <- read.xls('Olsen_2010_S2.xls',sheet=1, stringsAsFactors=FALSE)
+
+# Class I sites only
+
+Olsen_S2 <- Olsen_S2[grep('YES',Olsen_S2[,5]),]
+
+# Single phosphosite only
+
+Olsen_S2 <- Olsen_S2[Olsen_S2[,16] == 1,]
+
+Olsen_S2_UP <- strsplit(Olsen_S2[,2],split=';')
+
+# Take only those phosphosites that map to the CK2 neighbours
+
+Olsen_S2_CK2_int <- Olsen_S2[grep(TRUE,lapply(Olsen_S2_UP, function(x) x %in% csnk2_int)),]
+
+# Generate the CK2 sites
+
+Olsen_sites <- Olsen_S2_CK2_int[,18]
+
+# Predict CK2 sites on the basis of the motif (S-D/E-x-D/E)
+
+ck2_dex <- rapply(strsplit(Olsen_sites,split=''), function(x) x[8] %in% c('D','E')) & rapply(strsplit(Olsen_sites,split=''), function(x) x[10] %in% c('D','E')) & rapply(strsplit(Olsen_sites,split=''), function(x) x[7] %in% c('S'))
+
+Olsen_S2_ck2 <- Olsen_S2_CK2_int[ck2_dex,]
+
+Olsen_S2_ck2_ratios <- Olsen_S2_ck2[,6:11]
+
+# Calculate the substrate quality of the predicted CK2 sites
+
+ck2_sites <- Olsen_sites[ck2_dex]
+
+mss_vec <- NULL
+
+for (i in 1:length(ck2_sites)) {
+  
+  mss <- NULL
+  ck2_site <- ck2_sites[i]
+  mss <- ED_weight(ck2_site,csnk2_pwm)
+  if (length(mss) == 0) {break}
+  mss_vec <- c(mss_vec, mss)
+  
+}
+
+# Plot realtionship between CK2 substrate quality and variability during the cell cycle
+
+```
+
+
+# Interface data for the predicted CK2 sites with the promiscuity data from Johnson et al., 2023
+
+```{r}
+
+Olsen_S2_ck2
+mss_vec
+
+# Read in dataframe where predicted CK2 sites has been interfaced with the Johnson et al., 2023 data to predict the upstream kinases for each site
+
+ck2_sites_CC_johnson_predicted <- readRDS('olsen_johnson_CK2_predicted.rds')
+
+p <- ggplot(ck2_sites_CC_johnson_predicted,aes(x=mss_vec,y=ck2_promiscuity)) + geom_point(size=1) # Warning message is for sites with NA promiscuity 
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+p <- p+theme(panel.border = element_blank())
+p <- p + coord_cartesian(xlim=c(0,1))
+p <- p + xlab('Substrate quality') + ylab('Substrate promiscuity (predicted)') + ggtitle('Predicted CK2 targets')
+p <- p+coord_cartesian(xlim=c(0.0,1.0))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p+theme(axis.text.x=element_text(size=9.5),axis.text.y=element_text(size=10.5),axis.title.x=element_text(size=11.5,face="plain"),axis.title.y=element_text(size=10.75,face="plain"),plot.title=element_text(size=11,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p+theme(plot.title = element_text(vjust = -1))
+
+supp_fig_5d <- p
+
+```
+
+
+
+
