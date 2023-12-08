@@ -1,0 +1,58 @@
+---
+title: "Figure_1"
+author: "David Bradley"
+date: "10/1/2020"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Combine the figure panels using Cowplot
+
+```{r}
+
+library(cowplot)
+
+# CK2 model
+
+m <- ggdraw() + draw_image('Figure_1A.png')
+
+g1 <- plot_grid(m,labels=c(''))
+
+# PWM and peptides
+
+p2 <- ggdraw() + draw_image('Figure_1C.png', width=1.0)
+
+g2 <- plot_grid(fig_1b,p2,nrow=2,align='v',rel_heights=c(1.35,1))
+g2 <- g2 + theme(plot.margin = unit(c(-0.5,0.0,0.5,-1), "cm")) # t, r, b, l
+
+g1_g2 <- plot_grid(g1,g2,rel_widths=c(1,1.1))
+
+# Boxplots
+
+p2 <- ggdraw() + draw_image('Figure_1C.png', width=1.0)
+p2 <- p2 + theme(plot.margin = unit(c(-1,0,0,0), "cm")) # t, r, b, l
+
+g2 <- plot_grid(fig_1b,p2,nrow=2,align='v',rel_heights=c(1.35,1),labels=c('',''))
+g2 <- g2 + theme(plot.margin = unit(c(-1,-0.80,-1,-1.75), "cm")) # t, r, b, l
+
+g3 <- plot_grid(fig_1d,fig_1e,nrow=2,align='v',labels=c('',''))
+
+g1_g2_g3 <- plot_grid(g1,g2,g3,ncol=3,rel_widths=c(0.85,0.8,0.95))
+g1_g2_g3
+ggsave(file='Figure1_R.pdf', plot=g1_g2_g3, width=8.5, height=5.0)
+  
+```
+
