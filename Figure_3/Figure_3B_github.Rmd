@@ -1,0 +1,577 @@
+---
+title: "Figure 3B"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Model CK2 specificity
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+library(stringr)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr))
+
+# Human proteome
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the sequences
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential heirarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Retrieve the corresponding database records
+
+csnk2a_ksr_no_heira <- csnk2a_ksr[index_vec[!(p1s|p3s)],]
+
+csnk2a_ksr_no_heira <- cbind(csnk2a_ksr_no_heira,psite_no_heira)
+
+# Generate the PWM
+
+source('match-tm.r')
+
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Function for calculating the relative charge
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(apply(pwm[,c(1:6,8:13)],2,max))
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+## Extract data from the Phosfate SQL database
+
+# Peptide data
+
+```{r}
+
+# Retrive peptide data from the Phosfate SQL
+
+peptide <- read.csv('peptide.csv', head=F)
+colnames(peptide) <- c('ID','spectral_count','peptide','scored_peptide','experiment')
+
+# N.B: The peptide data makes use of peptide IDs and not the site IDs 
+
+```
+
+# Site data
+
+```{r}
+
+# Retrieve site data from the Phosfate SQL
+
+site <- read.csv('site.csv', head=F)
+colnames(site) <- c('ID','localisation','motif_type','residue','experiment')
+
+# N.B: The site table makes use of the site IDs and not the peptide IDs
+
+```
+
+# Map between peptide ID and site ID
+
+```{r}
+
+peptide_site <- read.csv('peptide_site.csv', head=F)
+colnames(peptide_site) <- c('peptide_id','site_id')
+
+# It is clear that the second column corresponds to the IDs we already have in 'site id'; the first corresponds to the set of IDs we need to map to for the peptide quantification
+
+```
+
+# Peptide quantifications
+
+```{r}
+
+# Retrieve peptide quantification data from the Phosfate SQL
+
+peptide_quantification <- read.csv('peptide_quantification.csv', head=F)
+colnames(peptide_quantification) <- c('ID','Condition','log2','Peptide')
+
+```
+
+# First thing to do is to map all uniprot IDs of substrates to Ensembl IDs
+
+```{r}
+
+# Uniprot to Ensembl mapping
+
+uniprot_ensembl_map <- read.csv('uniprot_ensembl.csv',head=F)
+colnames(uniprot_ensembl_map) <- c('UniProt','Ensembl')
+
+substrate_ensembl_IDs <- uniprot_ensembl_map[uniprot_ensembl_map[,1] %in% unique(csnk2a_ksr_no_heira[,3]),2]
+
+```
+
+# For the mappings between ensembl proteins and quantified peptides, retain only those corresponding
+# to CK2 substrates
+
+```{r}
+
+ensp_site <- read.csv('ensp_site.csv', head=F)
+colnames(ensp_site) <- c('ensp','site_id','position')
+
+# Subset for CK2 sibstrate only
+
+ensp_site_CK2_sub <- ensp_site[ensp_site[,1] %in% substrate_ensembl_IDs,]
+
+```
+
+# Retrieve all of the site IDs for CK2 substrates
+
+```{r}
+
+CK2_sites_df <- NULL
+
+for (i in 1:nrow(csnk2a_ksr_no_heira)) {
+  
+  print(i)
+  
+  accession <- csnk2a_ksr_no_heira[i,3]
+  pos <- csnk2a_ksr_no_heira[i,4]
+  target_site <- csnk2a_ksr_no_heira[i,6]
+  target_site <- substr(target_site,2,14)
+  charge <- ED_weight(target_site,csnk2_pwm)
+  charge <- as.numeric(charge)
+  
+  # Retrieve Ensembl IDs for the UniProt accession
+  
+  ensembl_ids <- uniprot_ensembl_map[uniprot_ensembl_map[,1] %in% accession,2]
+  
+  # Retrieve the site IDs corresponding to Ensembl ID and the relating substrate position
+  
+  sites_info <- ensp_site_CK2_sub[ensp_site_CK2_sub[,1] %in% ensembl_ids & ensp_site_CK2_sub[,3] %in% pos,]
+  sites_info <- cbind(sites_info,rep(accession,nrow(sites_info)))
+  sites_info <- cbind(sites_info,rep(target_site,nrow(sites_info)))
+  sites_info <- sites_info[,c(4,1,3,5,2)]
+  colnames(sites_info) <- c('uniprot','ensembl','pos','peptide','site_id')
+  
+  # Extract the Site IDs
+  
+  site_ids <- sites_info[,5]
+  
+  exp_info <- site[site[,1] %in% site_ids,]
+  experiments <- length(unique(exp_info[,5]))
+  experiments <- as.numeric(experiments)
+  
+  #### High confidence site info
+  
+  high_conf_sites <- sites_info
+  
+  #### Map site IDs to peptide IDs
+  
+  peptide_ids <- peptide_site[peptide_site[,2] %in% site_ids,1]
+  
+  ### Retrieve the quantifications from the peptide IDs
+  
+  CK2_target_quantification <- peptide_quantification[peptide_quantification[,4] %in% peptide_ids,]
+  CK2_target_unique_conditions <- length(unique(CK2_target_quantification[,2]))
+  CK2_target_unique_conditions <- as.numeric(CK2_target_unique_conditions)
+  
+  CK2_sites_df <- rbind(CK2_sites_df, c(accession,pos,target_site,charge,experiments,CK2_target_unique_conditions))
+    
+}
+
+CK2_sites_df_unique <- unique(CK2_sites_df)
+
+```
+
+# Prepare data frame to generate a boxplot for the relationship between substrate quality and number of conditions
+
+```{r}
+
+# Exlude sites with 0 charge (probably misannotated)
+
+CK2_sites_df_unique <- data.frame(CK2_sites_df_unique)
+CK2_sites_df_unique[,4] <- as.numeric(CK2_sites_df_unique[,4])
+CK2_sites_df_unique[,5] <- as.numeric(CK2_sites_df_unique[,5])
+CK2_sites_df_unique[,6] <- as.numeric(CK2_sites_df_unique[,6])
+
+CK2_sites_df_unique <- CK2_sites_df_unique[!CK2_sites_df_unique[,4] == 0,]
+colnames(CK2_sites_df_unique) <- c('uniprot','pos','site','sq','experiments','conditions')
+
+# Prepate violin plot
+
+mss_vec <- CK2_sites_df_unique[,4]
+
+col1 <- NULL
+col2 <- NULL
+
+for (i in 0:8) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  
+  ck2_experiments <- CK2_sites_df_unique[mss_vec > lower & mss_vec <= upper,6]
+
+  
+  col1 <- c(col1, ck2_experiments)
+  col2 <- c(col2, rep(paste(lower,'-',upper,sep=''),length(ck2_experiments)))
+  
+}
+
+mss_data <- data.frame(col1,col2)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Experiments','SQ')
+
+mss_data_all <- mss_data
+
+```
+
+# Obtain abundance values for the CK2 substrates. Abundance data sourced from PaxDB
+
+```{r}
+
+# Read in the PaxDB table
+
+human_paxdb <- read.table('Human_stoichiometry_PaxDB_integrated.tsv',sep='\t',stringsAsFactors = FALSE)
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+
+# Read in the UniProt mapping table
+
+uniprot_map <- read.table('full_uniprot_2_paxdb.04.2015.tsv', stringsAsFactors = FALSE)
+uniprot_map <- uniprot_map[uniprot_map[,1] == '9606',]
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+ensembl_uniprot <- uniprot_map[uniprot_map[,3] %in% human_ensembl,c(2,3)]
+ensembl_uniprot[,1] <- rapply(strsplit(ensembl_uniprot[,1],split='\\|'), function(x) x[1])
+rownames(ensembl_uniprot) <- NULL
+
+# Retrieve Ensembl IDs of CK2 substrates
+
+Ishi_CK2_ensembl <- CK2_sites_df_unique[CK2_sites_df_unique[,1] %in% ensembl_uniprot[,1],]
+
+Ishi_CK2_ensembl_ext <- Ishi_CK2_ensembl
+ensembl_vec <- NULL
+s = 0
+
+for (i in 1:nrow(Ishi_CK2_ensembl)) {
+  
+  i2 <- i+s
+  
+  accession <- Ishi_CK2_ensembl[i,1]
+  ensembl <- ensembl_uniprot[ensembl_uniprot[,1] %in% accession,2]
+  
+  if (length(ensembl) != 1) {Ishi_CK2_ensembl_ext <- rbind(Ishi_CK2_ensembl_ext[1:i2,],Ishi_CK2_ensembl_ext[i2,],Ishi_CK2_ensembl_ext[(i2+1):nrow(Ishi_CK2_ensembl_ext),])}
+  if (length(ensembl) != 1) {s = s+1}
+  
+  ensembl_vec <- c(ensembl_vec, ensembl)
+  
+}
+
+Ishi_CK2_ensembl_ext <- cbind(Ishi_CK2_ensembl_ext, ensembl_vec)
+
+# Retrieve abundance data for CK2 substrates 
+
+abundance_vec <- NULL
+
+human_ensembl <- gsub('9606.','',human_paxdb[,2])
+
+for (i in 1:nrow(Ishi_CK2_ensembl_ext)) {
+  
+  ensembl_id <- Ishi_CK2_ensembl_ext[i,7]
+  abundance <- human_paxdb[human_ensembl %in% ensembl_id,3]
+  abundance_vec <- c(abundance_vec, abundance)
+  
+}
+
+# Take the log10 of the abundance values
+
+log_abundance_vec <- log(abundance_vec,base=10)
+Ishi_CK2_ensembl_ext_abun <- cbind(Ishi_CK2_ensembl_ext, log_abundance_vec)
+
+```
+
+# Format data for the 'high' abundance proteins (>100 parts per million)
+
+```{r}
+
+# Prepate box plot
+
+Ishi_CK2_ensembl_ext_high_abun <- Ishi_CK2_ensembl_ext_abun[Ishi_CK2_ensembl_ext_abun[,8] > 2,]
+
+mss_vec <- Ishi_CK2_ensembl_ext_high_abun[,4]
+
+col1 <- NULL
+col2 <- NULL
+
+for (i in 0:8) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  
+  ck2_experiments <- Ishi_CK2_ensembl_ext_high_abun[mss_vec > lower & mss_vec <= upper,6]
+
+  
+  col1 <- c(col1, ck2_experiments)
+  col2 <- c(col2, rep(paste(lower,'-',upper,sep=''),length(ck2_experiments)))
+  
+}
+
+mss_data <- data.frame(col1,col2)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Experiments','SQ')
+
+mss_data_high <- mss_data
+
+```
+
+# Format data for the 'mid-low' abundance proteins (<100 parts per million)
+
+```{r}
+
+# Prepate box plot
+
+Ishi_CK2_ensembl_ext_mid_abun <- Ishi_CK2_ensembl_ext_abun[Ishi_CK2_ensembl_ext_abun[,8] < 2,]
+
+mss_vec <- Ishi_CK2_ensembl_ext_mid_abun[,4]
+
+col1 <- NULL
+col2 <- NULL
+
+for (i in 0:8) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  
+  ck2_experiments <- Ishi_CK2_ensembl_ext_mid_abun[mss_vec > lower & mss_vec <= upper,6]
+
+  
+  col1 <- c(col1, ck2_experiments)
+  col2 <- c(col2, rep(paste(lower,'-',upper,sep=''),length(ck2_experiments)))
+  
+}
+
+mss_data <- data.frame(col1,col2)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Experiments','SQ')
+
+mss_data_mid <- mss_data
+
+```
+
+# Figure 2B: relationship between SQ and number of detected conditions. Distinguish between low and high abundance substrates
+
+```{r}
+
+mss_data_mid <- cbind(mss_data_mid,rep('Mid-Low',nrow(mss_data_mid)))
+colnames(mss_data_mid) <- c('Conditions','SQ','Abundance')
+
+mss_data_high <- cbind(mss_data_high,rep('High',nrow(mss_data_high)))
+colnames(mss_data_high) <- c('Conditions','SQ','Abundance')
+
+mss_data <- rbind(mss_data_mid, mss_data_high)
+
+mss_data <- mss_data[!mss_data[,2] == '0.8-0.9',]
+mss_data$Abundance <- factor(mss_data$Abundance, levels = c('Mid-Low','High'))
+text_labels <- unname(table(paste(mss_data[,2],mss_data[,3])))
+text_labels <- text_labels[c(2,1,4,3,6,5,8,7,10,9,12,11,14,13,16,15)]
+
+#####
+
+library(viridis)
+
+my_colors <- c(rep(colors()[220],8),c('#DEEBF7','#C6DBEF','#9ECAE1','#6BAED6',
+                                                        '#4292C6','#2171B5','#084594','#002255'))
+
+
+# Plot the median plus the quartiles
+
+median.quartile <- function(x){
+  out <- quantile(x, probs = c(0.25,0.5,0.75))
+  names(out) <- c("ymin","y","ymax")
+  return(out) 
+}
+
+# ggplot
+
+g <- ggplot(mss_data , aes(x = SQ, y = Conditions,color=interaction(SQ,Abundance))) + geom_jitter(position=position_dodge(0.6),cex=1.0,alpha=0.5)
+g <- g + stat_summary(fun.data=median.quartile, 
+                 geom="pointrange", lwd=0.65, position = position_dodge(width = 0.6))
+g <- g + scale_color_manual(values=c('0-0.1.Mid-Low' = 'gray67',
+                                     '0.1-0.2.Mid-Low' = 'gray67',
+                                     '0.2-0.3.Mid-Low' = 'gray67',
+                                     '0.3-0.4.Mid-Low' = 'gray67',
+                                     '0.4-0.5.Mid-Low' = 'gray67',
+                                     '0.5-0.6.Mid-Low' = 'gray67',
+                                     '0.6-0.7.Mid-Low' = 'gray67',
+                                     '0.7-0.8.Mid-Low' = 'gray67',
+                                     '0-0.1.High' = '#DEEBF7',
+                                     '0.1-0.2.High' = '#C6DBEF',
+                                     '0.2-0.3.High' = '#9ECAE1',
+                                     '0.3-0.4.High' = '#6BAED6',
+                                     '0.4-0.5.High' = '#4292C6',
+                                     '0.5-0.6.High' = '#2171B5',
+                                     '0.6-0.7.High' = '#084594',
+                                     '0.7-0.8.High' = '#002255'
+                                     ),breaks=c('0-0.1.Mid-Low','0.7-0.8.High'), labels=c('Mid-Low','High'))
+                            
+g <- g+theme_bw()
+
+# Font
+g <- g+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+g <- g+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+g <- g + theme(legend.text = element_text(size=5.5), legend.title = element_text(size=6.0, face="plain"), legend.spacing.x = unit(-0.085, "cm"),)
+g <- g + guides(color = guide_legend(override.aes = list(size = 0.01)))
+g <- g + guides(shape = guide_legend(override.aes = list(size = 0.01)))
+g <- g+theme(legend.margin=margin(0,0,0,0),legend.box.margin=margin(-10,-5,-10,-10))
+g <- g+xlab('Substrate quality')+ylab('No. of conditions')
+g <- g+theme(axis.text.x=element_text(size=6.5),axis.text.y=element_text(size=7.5),axis.title=element_text(size=10,face="plain"),axis.title.y=element_text(size=10.5,face="plain"),plot.title=element_text(size=14,face='plain'))
+g <- g + theme(panel.border= element_blank())
+g <- g + theme(axis.title.x = element_text(vjust=5.0))
+g <- g+guides(col=guide_legend("Abundance"))
+g <- g + theme(plot.margin = unit(c(-0.75,0.25,-0.75,0.25), "cm")) # t, r, b, l
+g <- g + theme(axis.text.x = element_text(angle = 30, vjust = 1.25, hjust=1))
+
+x_vec <- c(0.85,1.2,1.85,2.2,2.85,3.2,3.85,4.2,4.85,5.2,5.85,6.2,6.85,7.2,7.85,8.2)
+
+g <- g + geom_text(data=data.frame(), aes(x_vec, y=rep(460,16), label=text_labels), size=2.1, inherit.aes = F)
+g
+
+figure_3b <- g
+mss_data_figure_3b <- mss_data
+
+ggsave(file='Figure_2B.pdf', plot=g, width=8.0, height=5.8)
+
+```
+

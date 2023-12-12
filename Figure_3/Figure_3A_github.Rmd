@@ -1,0 +1,514 @@
+---
+title: "Figure 3A"
+author: "David Bradley"
+date: "2/11/2020"
+output: html_document
+---
+
+## Now model the specificity of CK2 by retrieving
+## the sequences of the known substrates 
+
+```{r}
+
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the sequences
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential heirarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Retrieve the corresponding database records
+
+csnk2a_ksr_no_heira <- csnk2a_ksr[index_vec[!(p1s|p3s)],]
+csnk2a_ksr_no_heira <- cbind(csnk2a_ksr_no_heira,psite_no_heira)
+
+# Construct PWM using basic method
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+ggseqlogo(substr(psite_no_heira,2,14),method='probability')
+
+# Scoring function for the calculation of substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# Extract flanking sequences of the high-quality phosphosites reported in Ochoa et al., 2019 
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+ochoa <- read_xlsx('Ochoa_supplementary_3.xlsx', skip=0, col_names=TRUE, sheet=1)
+name <- ochoa[,1]
+pos <- ochoa[,2]
+
+site_mat <- cbind(name,pos)
+
+# Load in the human proteome
+
+hs_proteome <- read.fasta('human_proteome_reviewed.fasta', seqtype = 'AA')
+hs_proteome_id <- rapply(strsplit(names(hs_proteome),split='\\|'), function(x) x[2])
+
+# Error upon warning
+
+options(warn=2)
+
+ksr_df <- NULL
+isoform_df <- NULL
+missing_df <- NULL
+
+for (i in 1:nrow(site_mat)) {
+  
+  print(i)
+  
+  sub_id <- unname(site_mat[i,1])  
+  sub_pos <- as.numeric(unname(site_mat[i,2]))
+  
+  seq_dex <- match(sub_id,hs_proteome_id)
+  
+  # Check for missing IDs and sequences
+  
+  if (is.na(seq_dex)) {
+    missing_vec <- c(sub_id, sub_pos)
+    missing_df <- rbind(missing_df, missing_vec)
+    next
+  }
+  
+  seq <- getSequence(hs_proteome[seq_dex])[[1]]
+  
+  #Check for psites at terminal positions
+  if (sub_pos > 7 & length(seq)-sub_pos >= 7) {
+    psite <- seq[(sub_pos-7):(sub_pos+7)]  
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At N-terminus
+  if (sub_pos <= 7) {
+    psite <- seq[1:(sub_pos+7)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',8-sub_pos),collapse='')
+    psite <- str_c(gap,psite,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!str_sub(psite,8,8) %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At C-terminus
+  if (length(seq)-sub_pos < 7) {
+    psite <- seq[(sub_pos-7):length(seq)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',7-(length(seq)-sub_pos)),collapse='')
+    psite <- str_c(psite,gap,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  
+  
+  ksr_seq <- c(sub_id,sub_pos,psite)
+  ksr_df <- rbind(ksr_df,ksr_seq)
+  
+}
+
+ksr_df_full <- ksr_df
+isoform_df_full <- isoform_df
+missing_df_full <- missing_df
+
+hs_sites <- unname(ksr_df[,3])
+hs_sites_IDs <- unname(ksr_df[,1])
+
+```
+
+### Retrain the Ochoa prediction model without specificity features
+
+```{r}
+
+devtools::install_github("evocellnet/funscoR", force=TRUE)
+
+library(funscoR)
+library(knitr)
+library(dplyr)
+library(stringr)
+
+# All data
+phosphoproteome %>%
+  head() %>%
+  kable()
+
+# PhospshoSitePlus known functional
+psp %>%
+  head() %>%
+  kable()
+
+# List of available annotations
+data(package = "funscoR")$results %>% 
+  as.data.frame() %>% 
+  filter(str_detect(Item, "feature")) %>% 
+  select(Item) %>%
+  kable()
+
+# Specificity features
+feature_pwm_match %>%
+  head() %>%
+  kable()
+
+feature_netphorest %>%
+  head() %>%
+  kable()
+
+feature_elm %>%
+  head() %>%
+  kable()
+
+# Annotate phosphoproteome with features
+annotated_phos <- annotate_sites(phosphoproteome)
+
+# Train the model after exlcuding motif features
+
+ST_features <- preprocess_features(annotated_phos, "ST")
+ST_features <- ST_features[,!colnames(ST_features) %in% c('isELMLinearMotif','isMotif','PWM_max_mss','netpho_max_KIN','netpho_max_all')]
+
+# Train the model (about 15 minutes with 12 cores)
+# Alter the number of cores as appropriate
+
+ST_model <- train_funscore(ST_features, "ST", psp, ncores = 4)
+
+# Use the trained model to predict functional scores
+# Alter the number of cores as appropriate
+
+ST_scores <- predict_funscore(ST_features, ST_model, ncores = 4)
+
+# log transform the scores
+
+ST_scores$probabilities <- log_scaling(ST_scores$probabilities)
+
+```
+
+# Functional scores for known CK2 sbstrates
+
+```{r}
+
+# For known CK2 substrates, extract the functional scores given in Ochoa et al., 2019 
+
+library(seqinr)
+
+ck2_sub <- paste(unlist(csnk2a_ksr_no_heira[,3]),unlist(csnk2a_ksr_no_heira[,4]),sep='_')
+ST_scores_ck2 <- ST_scores[ST_scores[,1] %in% ck2_sub,]
+
+ksr_df <- NULL
+isoform_df <- NULL
+missing_df <- NULL
+
+for (i in 1:nrow(ST_scores_ck2)) {
+  
+  print(i)
+  
+  sub_id <- unlist(strsplit(as.character(ST_scores_ck2[i,1]),split='_'))[1]
+  sub_pos <- unlist(strsplit(as.character(ST_scores_ck2[i,1]),split='_'))[2]
+  sub_pos <- as.numeric(sub_pos)
+  
+  seq_dex <- match(sub_id,hs_proteome_id)
+  
+  # Check for missing IDs and sequences
+  
+  if (is.na(seq_dex)) {
+    missing_vec <- c(sub_id, sub_pos)
+    missing_df <- rbind(missing_df, missing_vec)
+    next
+  }
+  
+  seq <- getSequence(hs_proteome[seq_dex])[[1]]
+  
+  #Check for psites at terminal positions
+  if (sub_pos > 7 & length(seq)-sub_pos >= 7) {
+    psite <- seq[(sub_pos-7):(sub_pos+7)]  
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At N-terminus
+  if (sub_pos <= 7) {
+    psite <- seq[1:(sub_pos+7)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',8-sub_pos),collapse='')
+    psite <- str_c(gap,psite,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!str_sub(psite,8,8) %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At C-terminus
+  if (length(seq)-sub_pos < 7) {
+    psite <- seq[(sub_pos-7):length(seq)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',7-(length(seq)-sub_pos)),collapse='')
+    psite <- str_c(psite,gap,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  
+  
+  ksr_seq <- c(sub_id,sub_pos,psite,ST_scores_ck2[i,2])
+  ksr_df <- rbind(ksr_df,ksr_seq)
+  
+}
+
+ck2_sites <- unname(ksr_df[,3])
+ck2_sites <- substr(ck2_sites,2,14)
+ck2_IDs <- unname(ksr_df[,1])
+ck2_scores <- ksr_df[,4]
+
+# Calculate the CK2 substrate quality for each one of these sites
+
+mss_vec <- NULL
+
+for (i in 1:length(ck2_sites)) {
+  
+  mss <- NULL
+  ck2_site <- ck2_sites[i]
+  mss <- ED_weight(ck2_site,csnk2_pwm)
+  if (length(mss) == 0) {break}
+  mss_vec <- c(mss_vec, mss)
+  
+}
+
+# Plot the relationship between substrate quality and the phosphosite functional score (derived from Ochoa et al., 2019)
+
+ck2_cov_list <- NULL
+col1 <- NULL
+col2 <- NULL
+
+for (i in 0:8) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  print(lower)
+  print(upper)
+  
+  ck2_scores_mss  <- ck2_scores[mss_vec > lower & mss_vec <= upper]
+  ck2_scores_mss <- as.numeric(ck2_scores_mss)
+  
+  ck2_cov_list <- c(ck2_cov_list, list(ck2_scores_mss))
+  
+  col1 <- c(col1, ck2_scores_mss)
+  col2 <- c(col2, rep(paste(lower,'-',upper,sep=''),length(ck2_scores_mss)))
+
+} 
+
+mss_data <- data.frame(col1,col2)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('Stoichiometry','Positions')
+
+med_ST_scores <- 0.2656471
+
+p <- ggplot(mss_data, aes(x=Positions, y=Stoichiometry)) + geom_boxplot(color=colors()[220],lwd=1.2, width=0.5) + geom_boxplot(fill='white',color=colors()[190], lwd=1.2, notch=FALSE,fatten=1.5,width=0.5,aes(ymin=..lower.., ymax=..upper..)) #+ geom_jitter(width = 0.2, color=colors()[288],size=1.9) 
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+#ggplot graphical parameters
+
+p <- p + ylab("Functional score") + xlab("Substrate quality") + ggtitle('')
+p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text.x=element_text(size=6.0),axis.text.y=element_text(size=9),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p + theme(panel.border= element_blank())
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # 
+p <- p + theme(plot.margin = unit(c(-0.35,0.1,0,0), "cm")) # t, r, b, l
+p <- p + geom_hline(yintercept=med_ST_scores, linetype="dashed", color = "red", size=1)
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.25, hjust=1))
+p <- p + theme(axis.title.x = element_text(vjust=5.0))
+p <- p+geom_text(data=data.frame(), aes(x=c(1:8), y=rep(1.10,8)), label=c(unname(table(mss_data[,2]))),col=colors()[190], fontface='plain', size=3.0)
+p
+
+figure_3a <- p
+mss_data_figure_3a <- mss_data
+
+ggsave(file='Figure_2a.pdf', plot=p, width=6.1, height=4.8)
+
+```
+
