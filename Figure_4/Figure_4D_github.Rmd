@@ -1,0 +1,313 @@
+---
+title: "Figure 4D"
+author: "David Bradley"
+date: "1/1/2021"
+output: html_document
+---
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Retrieve the known substrates of human CK2
+
+```{r}
+
+library(stringr)
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential hierarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+############################################################
+
+# Restrict in the range of -6 to +6
+
+psite_no_heira <- substr(psite_no_heira,2,14)
+
+# Remove any sites with a gap in them
+
+psite_no_heira <- psite_no_heira[-grep('_',psite_no_heira)]
+
+```
+
+### Empirical distribution
+
+```{r}
+
+psite_no_heira <- unique(psite_no_heira)
+# Remove potential hierarchical sites
+p1_dex <- substr(psite_no_heira,8,8) %in% c('D','E')
+p3_dex <- substr(psite_no_heira,10,10) %in% c('D','E')
+ck2_minimal <- psite_no_heira[p1_dex & p3_dex]
+
+# Calculate the empirical D+E distribution
+
+DE_count <- str_count(ck2_minimal, pattern='E')+str_count(ck2_minimal, pattern='D')
+
+DE_count_marginal <- table(DE_count)/sum(table(DE_count))
+
+# Account for the absence of 12
+
+DE_count_marginal <- c(DE_count_marginal, 0)
+names(DE_count_marginal)[c(11)] <- c(12)
+
+# Subtract -2 from the scores because we are counting the D and Es over and above those found at +1 and +3
+
+names(DE_count_marginal) <- as.numeric(names(DE_count_marginal))-2
+
+```
+
+# Plot the expected D/E frequencies under selection as we systematically navigate the theta and omega parameter space
+
+```{r}
+
+# Use the disorder-controlled background expectation frequencies for D and E
+
+Bachmann_bg <- readRDS('bachmann_disorder_bg_weights.rds')
+
+disorder_DE <- Bachmann_bg[3]+Bachmann_bg[4]
+
+# Effective population size for humans
+
+Ne <- 21091
+
+# Range of theta and omega parameters
+
+theta_vec <- 0:10
+omega_vec <- seq(20,1200,by=20)
+
+# Initialise the Kullback-Leibler divergence vector
+
+KL_score_vec <- NULL
+
+for (i in 1:length(theta_vec)) {
+  for (j in 1:length(omega_vec)) {
+    
+    Ne <- 21091
+    
+    # Calculate the probability vector under neutrality
+    
+    prob_vec <- NULL
+    
+    for (z in 0:10) {
+      
+      prob <- dbinom(x=z,size=10,prob=disorder_DE)
+      
+      print(prob)
+      
+      prob_vec <- c(prob_vec, prob)
+      
+    }
+    
+    # Now model the effect of selection
+    
+    theta <- theta_vec[i]
+    m <- 0:10
+    
+    omega <- omega_vec[j]
+    
+    numerator <- -(m-theta)^2
+    denominator <- (2*omega^2)
+    exponent <- numerator / denominator
+    fitness <- exp(exponent)
+    
+    s = fitness
+    
+    # Normalise
+    
+    sm <- s-max(s) # max(s) should always be equal to 1
+    
+    sel_mod <- exp(2*Ne*sm)
+    
+    ## apply to probabilities
+    
+    prob_vec <- (prob_vec*sel_mod)/sum(prob_vec*sel_mod)
+    
+    # Calculate KL
+    
+    KL_score <- sum(log2(DE_count_marginal/prob_vec)*DE_count_marginal,na.rm=T)
+    KL_score_vec <- c(KL_score_vec,KL_score)
+    
+  }
+}
+
+# Generate the input matrix to be used for the visualisation of the heatmap
+# Set very high values (infinite) to 4 (these are represented as >4 in Figure 3d)
+
+KL_score_vec2 <- KL_score_vec
+KL_score_vec2[KL_score_vec2>4] <- 4
+KL_mat <- matrix(KL_score_vec2,nrow=length(omega_vec),ncol=11,byrow=F)
+rownames(KL_mat) <- omega_vec
+colnames(KL_mat) <- theta_vec
+
+```
+
+# Generate a fancy heatmap using complex heatmaps
+
+```{r}
+
+library(ComplexHeatmap)
+library('RColorBrewer')
+library(circlize)
+library(viridis)
+
+# Matrix for the heatmap
+KL_mat <- KL_mat
+KL_rows <- omega_vec
+KL_rows[which(KL_rows%%200 != 0)] <- ''
+rownames(KL_mat) <- KL_rows
+
+Heatmap(KL_mat[nrow(KL_mat):1,],cluster_columns=FALSE,cluster_rows=FALSE,col=colorRamp2(breaks=seq(0,4,length.out=8),colors=rev(magma(12)[5:12])), 
+        row_names_side='left',
+       # heatmap_width=0.5,
+        width=unit(8,'cm'),
+       # heatmap_height=2,
+        height=unit(8,'cm'),
+        border=TRUE,
+        row_title=expression(paste(omega,' (scale parameter)',sep='')),
+        row_title_gp=gpar(fontsize = 13),
+        row_names_rot=0,
+        row_names_centered=TRUE,
+        row_names_gp=gpar(fontsize = 10),
+        
+        show_column_names=FALSE,
+        bottom_annotation = HeatmapAnnotation(
+        text = anno_text(colnames(KL_mat), rot = 0, offset = unit(0.75, "npc"), just = "right"),
+        annotation_height = max_text_width(colnames(KL_mat))),
+        column_title=expression(paste(theta,' (fitness optimum)',sep='')),
+        column_title_side='bottom',
+        column_title_gp=gpar(fontsize = 14),
+        
+        #column_names_gp=gpar(fontsize=12,fontface=1,col=colors()[261]),
+        #col_names_rot=90,
+        #rect_gp=(gpar(lwd=1.7, fontfamily='mono')), 
+       
+   heatmap_legend_param = list(
+    at = c(0,4),
+    labels = c("0", ">4"),
+    title = "KL",
+    legend_height = unit(3.5, "cm"),
+    legend_width = unit(2, "cm"),
+    border='black',
+    lwd=1.7
+    #title_position = "leftcenter-rot"
+))
+
+
+# write out table
+rownames(KL_mat) <- omega_vec
+write.csv(KL_mat,'KL_mat.csv')
+
+```
