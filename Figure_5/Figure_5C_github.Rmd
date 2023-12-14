@@ -1,0 +1,758 @@
+---
+title: "Figure 4c"
+author: "David Bradley"
+date: "1/1/2021"
+output: html_document
+---
+
+### Now we need to run through each one of the results files and try to date the last ancestor with an S
+
+# GGplot font
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# The first step is to model the specificity of CK2
+
+```{r}
+
+library(stringr)
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential hierarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Bind flanking sequences to the original data frame
+
+csnk2a_ksr <- csnk2a_ksr[index_vec,]
+csnk2a_ksr <- csnk2a_ksr[!(p1s|p3s),]
+csnk2a_ksr <- cbind(csnk2a_ksr, psite_no_heira)
+
+# Construct the scoring function
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Scoring function for the calculation of CK2 substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+```
+
+# The next step is to filter for CK2 target sites that fall in disordered regions. We will do this
+# using an AlphaFold2-based assessment of protein disorder
+
+```{r}
+
+# AlphaFold disorder prediction on the basis of smoothened RSA (window size = 15)
+
+AF2_accessibility <- readLines('9606.accessibility_windowed_scores.15.tdt')
+
+AF2_vec <- NULL
+
+count = 0
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  accession <- csnk2a_ksr[i,3]
+  pos <- csnk2a_ksr[i,4]
+  
+  grep_dex <- grep(accession,AF2_accessibility)
+  
+  # If we cannot find the corresponding residue in the accessibility file, then I will arbitrarily set
+  # the disorder value to 0.5
+  
+  if (length(grep_dex) == 0) {disorder_pred <- 0.5; AF2_vec <- c(AF2_vec,disorder_pred); 
+  count = count+1; next}
+  
+  disorder_pred <- AF2_accessibility[grep_dex]
+  disorder_pred <- rapply(strsplit(disorder_pred,split='\t'), function(x) x[2])
+  disorder_pred <- unlist(strsplit(disorder_pred,split=','))
+  disorder_pred <- disorder_pred[pos]
+  
+  AF2_vec <- c(AF2_vec,disorder_pred)
+  
+}
+
+AF2_vec <- as.numeric(AF2_vec)
+
+# Now I will filter for phosphosites in disordered regions only
+# For the cutoff, I will use the threshold that gives a 5% false discovery rate
+# and 80% true positive rate
+
+csnk2a_ksr_disorder <- csnk2a_ksr[which(AF2_vec >= 0.55),]
+csnk2a_ksr_disorder <- cbind(csnk2a_ksr_disorder,AF2_vec[which(AF2_vec >= 0.55)])
+colnames(csnk2a_ksr_disorder) <- c(colnames(csnk2a_ksr_disorder)[1:5],'sequence','AF2_disorder')
+
+# Filter out redundant phosphosites assigned to the other catalytically active subunit
+
+csnk2a_ksr_disorder_unique <- csnk2a_ksr_disorder[!duplicated(csnk2a_ksr_disorder[,6]),]
+
+```
+
+# Obtain list of all taxonomic divisions found in the data
+
+```{r}
+
+library(seqinr)
+
+# Move to the directory containing all of the Ensembl orthologs where the spurious sequences have been removed by trimAl
+
+setwd("vertebrate_ensembl_trimal_seq")
+
+seq_files <- list.files()
+
+# Fetch the names of the taxa (Ensembl annotation) for each orthologue
+
+taxon_names_vec <- NULL
+
+for (i in 1:length(seq_files)) {
+  
+  seq_file <- seqinr::read.fasta(seq_files[i],seqtype='AA')
+  seq_file_names <- names(seq_file)
+  taxon_names <- rapply(strsplit(seq_file_names,split='_'), function(x) x[length(x)])
+  if(length(taxon_names) == 1) {next}
+  taxon_names <- taxon_names[2:length(taxon_names)]
+  taxon_names <- unique(taxon_names)
+  taxon_names_vec <- c(taxon_names_vec, taxon_names)  
+  
+}
+
+taxon_names_vec <- unique(taxon_names_vec)
+
+# Manually arrange taxon names in chronological order
+
+taxon_names_vec_ordered <- taxon_names_vec[c(9,10,11,3,18,20,19,21,1,14,4,15,5,7,16,17,8,6,13,2,12)]
+
+# For each of the taxa we now need to (manually) give the divergence times obtained from TimeTree
+
+taxon_names_vec_ordered_dates <- c(1105,824,684,615,473,435,413,352,312,177,159,105,96,90,74,67,43,29,20,16,9)
+names(taxon_names_vec_ordered_dates) <- taxon_names_vec_ordered
+
+# Place each age into one bin (>700mya, 200-700mya, <200mya)
+
+### We group the vertebrates with the pre-vertebrates as -- since we use 1-to-1 orthologs and not 1-to-many --
+### some sites in the 'Vertebrate' class may have an earlier origin
+
+taxon_names_vec_ordered_bins <- c('old','old','old','old','intermediate','intermediate',
+                                  'intermediate','intermediate','intermediate',
+                                  'young','young','young','young','young','young','young',
+                                  'young','young','young','young','young')
+
+names(taxon_names_vec_ordered_bins) <- taxon_names_vec_ordered
+
+```
+
+### Now iterate through each one of the phosphsosites and then output the subtree with an ancestral S and all
+### descendant sequences
+
+```{r}
+
+library(seqinr)
+library(ape)
+
+# Go to the filtered alignments
+filtered_alignment_files <- list.files('vertebrate_ensembl_trimal_seq')
+
+# Go to the unfiltered alignments
+alignment_files <- list.files('vertebrate_ensembl_aligned')
+
+# Rooted FastTree files for each one of the alignments
+tree_files <- list.files('vertebrate_ensembl_FastTree_rooted')
+
+phospho_taxon_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr_disorder_unique))  { 
+  
+  print(i)
+  
+  # There are a small number of orthologues
+  # in primates that have identical sequences and therefore ASR does not work. We filter them out here.
+  
+  if (i %in% c(43,231,259,312)) {phospho_taxon_vec <- c(phospho_taxon_vec, 'NA'); next}
+  
+  phospho_taxon_oldest <- NULL
+  
+  accession <- csnk2a_ksr_disorder_unique[i,3]
+  pos <- csnk2a_ksr_disorder_unique[i,4]
+  
+  # Retrieve the relevant sequence alignment
+  
+  filtered_alignment <- filtered_alignment_files[grep(accession,filtered_alignment_files)]
+  
+  # Skip if there were no filtered alignments for this accession
+  
+  if (length(filtered_alignment) == 0) {
+    filtered_alignment <- alignment_files[grep(accession,alignment_files)]
+    filtered_al_seq <- seqinr::read.fasta(paste('vertebrate_ensembl_aligned/',filtered_alignment,sep=''),seqtype='AA')
+    
+  } else {
+  
+    filtered_al_seq <- seqinr::read.fasta(paste('vertebrate_ensembl_trimal_seq/',filtered_alignment,sep=''),seqtype='AA')
+    
+  }
+    
+  # Skip if there is only one sequence
+  
+  if (length(filtered_al_seq) == 1) {phospho_taxon_vec <- c(phospho_taxon_vec, 'NA'); next}
+  
+  # First sequence is always human
+  
+  human_seq <- getSequence(filtered_al_seq[[1]])
+  
+  # Now map the human numbering to the alignment numbering
+  
+  count = 0
+  al_pos_vec <- NULL
+  human_pos_vec <- NULL
+  
+  for (j in 1:length(human_seq)) {
+    
+    aa <- human_seq[j]
+    al_pos <- j
+    
+    if (aa != '-') {count=count+1; human_pos <- count}
+    if (aa == '-') {count=count; human_pos <- '-'}
+    
+    al_pos_vec <- c(al_pos_vec, al_pos)
+    human_pos_vec <- c(human_pos_vec, human_pos)
+    
+  }
+  
+  human_map_df <- data.frame(al_pos_vec, human_pos_vec,stringsAsFactors = FALSE)
+  human_map_phospho_al <- human_map_df[human_map_df[,2] == pos,1]
+  
+  # Now read in the corresponding tree from FastML with ancestral sequence reconstructions
+  
+  filtered_al_tree_file <- paste('ASR_CK2/',accession,'/tree.newick.txt',sep='')
+  filtered_al_tree <- ape::read.tree(filtered_al_tree_file)
+  
+  fast_tree_file <- paste('vertebrate_ensembl_FastTree_rooted/',tree_files[grep(accession,tree_files)],sep='')
+  fast_tree <- ape::read.tree(fast_tree_file)
+  
+  # N.B. Indices of the tips and nodes are given so that the tips is first, followed by the nodes
+  tips <- filtered_al_tree$tip.label
+  nodes <- filtered_al_tree$node.label
+  
+  # Obtain relevant tip/node indexes
+  
+  tip_dex <- which(tips==accession)
+  root <- length(tips)+1
+  
+  # Path from root to accession tip
+  
+  accession_path <- nodepath(filtered_al_tree,from=root,to=tip_dex)
+  
+  # Remove the tip
+  
+  accession_path <- setdiff(accession_path,tip_dex)
+  
+  # Obtain the node indexes
+  
+  accession_path <- accession_path-length(tips)
+  
+  # Obtain internal path nodes
+  
+  path_nodes <- nodes[accession_path]
+  
+  # From tip to root
+  
+  path_nodes <- rev(path_nodes)
+ 
+  ############
+  
+  # Now, iterate through the nodes from tip to root to determine the first node that was not an S or T
+  
+  anc_seq_res_file <- paste('ASR_CK2/',accession,'/Ancestral_MaxMarginalProb_Char_Indel.txt',sep='')
+  
+  anc_seq_res <- read.table(anc_seq_res_file,head=T)
+  anc_seq_res_pos <- anc_seq_res[anc_seq_res[,1] == human_map_phospho_al,]
+  
+  anc_aa_vec <- NULL
+  
+  for (j in 1:length(path_nodes)) {
+    
+    path_node <- path_nodes[j]
+    
+    anc_seq_res_pos_node <- anc_seq_res_pos[anc_seq_res_pos[,2] == path_node,]
+    anc_seq_res_pos_node_aa <- anc_seq_res_pos_node[3]
+    anc_seq_res_pos_node_aa <- as.character(unlist(unname(anc_seq_res_pos_node_aa)))
+    
+    anc_seq_res_pos_node_prob <- unlist(unname(anc_seq_res_pos_node[4]))
+    
+    # Consider the ancestral aa to be unknown if max probability < 0.5
+    
+    if (anc_seq_res_pos_node_prob < 0.5) {anc_seq_res_pos_node_aa <- '?'}
+    names(anc_seq_res_pos_node_aa) <- path_node
+    
+    # Break the loop if the residue was not phosphorylatable
+    if (!anc_seq_res_pos_node_aa %in% c('S','T')) {break}
+    
+    anc_aa_vec <- c(anc_aa_vec, anc_seq_res_pos_node_aa)
+    
+  } 
+  
+  # if the phosphosite is species-specific (skip the loop)
+  if (length(anc_aa_vec) == 0) {phospho_taxon_vec <- c(phospho_taxon_vec, 'Human'); next}
+  
+  # Find the last node that is an S or T
+  
+  last_phospho <- anc_aa_vec[length(anc_aa_vec)]
+  last_phospho_node <- names(last_phospho)
+  last_phospho_node_index <- which(nodes == last_phospho_node)+length(tips)
+  
+  # Now we need to find all tips arising from the node of interest
+  global_path <- nodepath(filtered_al_tree,from=root)
+  
+  # Subset for paths that contain the node of interest
+  phospho_paths <- global_path[grep(last_phospho_node_index,global_path)]
+  
+  # Retrieve the tip index for each path
+  phospho_path_tips_index <- rapply(phospho_paths, function(x) x[length(x)])
+  
+  # Retrieve the tip index for each path
+  phospho_path_tips <- tips[phospho_path_tips_index]
+  
+  # Extract the taxa found across all relevant tips
+  phospho_path_taxa <- rapply(strsplit(phospho_path_tips,split='_'), function(x) x[length(x)])
+  
+  # Retrieve the oldest taxon
+  phospho_taxon_oldest <- taxon_names_vec_ordered[taxon_names_vec_ordered %in% phospho_path_taxa][1]
+  phospho_taxon_vec <- c(phospho_taxon_vec, phospho_taxon_oldest)
+  
+  ## Now, we need to write out the sub-tree with an S/T ancestor and all descendant nodes
+  
+  sub_tree <- keep.tip(fast_tree, phospho_path_tips)
+  sub_tree_file <- paste(accession,'_',pos,'_subtree.tre',sep='')
+ # write.tree(sub_tree, file=sub_tree_file)
+  
+  sub_filtered_al_seq <- filtered_al_seq[names(filtered_al_seq) %in% phospho_path_tips]
+  sub_seq_file <- paste(accession,'_',pos,'_subseq.fa',sep='')
+  # write.fasta(sub_filtered_al_seq, names=names(sub_filtered_al_seq), file.out=sub_seq_file)
+  
+}
+
+### Add taxon information to the data frame of CK2 substrates
+
+csnk2a_disorder_sites_dates <- data.frame(csnk2a_ksr_disorder_unique,phospho_taxon_vec)
+
+# Filter out NA sites
+
+csnk2a_disorder_sites_dates <- csnk2a_disorder_sites_dates[csnk2a_disorder_sites_dates[,8] != 'NA',]
+
+###
+
+#accession_position
+tag <- paste(csnk2a_disorder_sites_dates[,3],'_',csnk2a_disorder_sites_dates[,4],sep='')
+
+# Directory of sub-trees with an ancestral S or T
+subtree_files <- list.files('vertebrate_ensembl_FastTree_anc_ST')
+
+# Directory of sub-sequences corresponding to the sub-trees with an ancestral S or T
+subseq_files <- list.files('vertebrate_ensembl_seq_anc_ST')
+
+subtree_accession_pos <- rapply(strsplit(subtree_files,split='_subtree'), function(x) x[1])
+subseq_accession_pos <- rapply(strsplit(subseq_files,split='_subseq'), function(x) x[1])
+
+# Discrepancy of 1 caused by presence of S in human sequence but no other ortholog
+
+csnk2a_disorder_sites_dates_filter <- csnk2a_disorder_sites_dates[-grep("P03372_559",tag),]
+
+```
+
+# Run rate 4 site for each of the phosphosites
+
+```{r}
+
+# Directory of sub-sequences corresponding to the sub-trees with an ancestral S or T
+subseq_files <- list.files('vertebrate_ensembl_seq_anc_ST')
+
+# Directory of sub-trees with an ancestral S or T
+subtree_files <- list.files('vertebrate_ensembl_FastTree_anc_ST')
+
+for (i in 1:nrow(csnk2a_disorder_sites_dates_filter)) {
+  
+  print(i)
+  
+  sub_accession <- csnk2a_disorder_sites_dates_filter[i,3]
+  pos <- csnk2a_disorder_sites_dates_filter[i,4]
+  
+  sequence_file <- paste(sub_accession,'_',pos,'_','subseq.fa',sep='')
+  tree_file <- paste(sub_accession,'_',pos,'_','subtree.tre',sep='')
+  
+  # Copy the aligned file to the new rate4site directory
+
+  setwd("vertebrate_ensembl_seq_anc_ST")
+  
+  copy_com <- paste('cp',sequence_file,paste('vertebrate_ensembl_rate4site_anc_ST',sequence_file,sep=''))
+  
+  system(copy_com)
+  
+  # Copy the tree file to the new directory
+  
+  setwd("vertebrate_ensembl_FastTree_anc_ST")
+  
+  copy_com <- paste('cp',tree_file,paste('vertebrate_ensembl_rate4site_anc_ST',tree_file,sep=''))
+  
+  system(copy_com)
+  
+  # Run rate4site
+  
+  setwd("vertebrate_ensembl_rate4site_anc_ST")
+  r4s_com <- paste('rate4site -s',sequence_file,'-t',tree_file,'-mj -zn')
+  system(r4s_com)
+  
+  # Remove the sequence and tree files
+  
+  rm_com <- paste('rm',sequence_file)
+  system(rm_com)
+  
+  rm_com <- paste('rm',tree_file)
+  system(rm_com)
+  
+  # Rename results file
+  
+  results_file <- paste(sub_accession,'_',pos,'_r4s.res',sep='')
+  results_file_original <- paste(sub_accession,'_',pos,'_r4sOrig.res',sep='')
+  r4s_tree_file <- paste(sub_accession,'_',pos,'_TheTree.txt',sep='')
+  
+  move_results <- paste('mv','r4s.res',results_file)
+  system(move_results)
+  
+  move_results_original <- paste('mv','r4sOrig.res',results_file_original)
+  system(move_results_original)
+  
+  move_tree_file <- paste('mv','TheTree.txt',r4s_tree_file)
+  system(move_tree_file)
+  
+}
+
+```
+
+# Analyse the new rate4site data:
+
+```{r}
+
+setwd("vertebrate_ensembl_rate4site_anc_ST")
+
+# list fo rate4site files
+r4s_files <- list.files('vertebrate_ensembl_rate4site_anc_ST')
+r4s_orig_files <- r4s_files[grep('r4sOrig',r4s_files)]
+
+AF2_accessibility <- readLines('9606.accessibility_windowed_scores.15.tdt')
+
+count = 0
+Z_vec <- NULL
+dis_len_vec <- NULL
+
+for (i in 1:nrow(csnk2a_disorder_sites_dates_filter)) {
+  
+  print(i)
+  
+  accession <- csnk2a_disorder_sites_dates_filter[i,3]
+  pos <- csnk2a_disorder_sites_dates_filter[i,4]
+  
+  site_tag <- paste(accession,'_',pos,'_',sep='')
+  
+  # Retrieve the orginal (unnormalised) rate4 site file
+  
+  r4s_orig_file <- r4s_orig_files[grep(site_tag,r4s_orig_files)]
+  
+  if (length(r4s_orig_file) == 0) {Z_vec <- c(Z_vec,NA); dis_len_vec <- c(dis_len_vec,NA);
+  count = count+1; next}
+  
+  r4s_orig <- readLines(r4s_orig_file)
+  r4s_orig <- r4s_orig[14:length(r4s_orig)]
+  r4s_orig <- r4s_orig[1:(length(r4s_orig)-2)]
+  
+  # Retrieve the corresponding human AF2 disorder data for this CK2 substrate
+  
+  grep_dex <- grep(accession,AF2_accessibility)
+  
+  # Ignore this protein if it does not have a corresponding AF2 model
+  
+  if (length(grep_dex) == 0) {Z_vec <- c(Z_vec,NA); dis_len_vec <- c(dis_len_vec,NA);
+  count = count+1; next}
+  
+  # Retrieve the r4s scores for this protein
+  
+  disorder_pred <- AF2_accessibility[grep_dex]
+  disorder_pred <- rapply(strsplit(disorder_pred,split='\t'), function(x) x[2])
+  disorder_pred <- unlist(strsplit(disorder_pred,split=','))
+  
+  # Sanity check
+  if(length(r4s_orig) != length(disorder_pred)) {stop('r4s and AF2 length do not match')}
+  
+  # Only retrieve the r4s scores for the disordered regions, as predicted using the AF2 models
+  r4s_disorder <- r4s_orig[which(disorder_pred >= 0.55)]
+  r4s_disorder_pos <- as.numeric(rapply(strsplit(r4s_disorder,split=' '),function(x)x[1]))
+  r4s_disorder_evo_rate <- as.numeric(rapply(strsplit(r4s_disorder, "\\s+"),function(x) x[3]))
+  
+  # r4s score the phoshoacceptor itself
+  phosphoacceptor_evo_rate <- r4s_disorder_evo_rate[which(r4s_disorder_pos == pos)]
+  # mean disordered r4s
+  evo_rate_mean <- mean(r4s_disorder_evo_rate)
+  # sd of disordered r4s
+  evo_rate_sd <- sd(r4s_disorder_evo_rate)
+  # caluclate the r4s z-score
+  phosphoacceptor_z <- (phosphoacceptor_evo_rate - evo_rate_mean)/evo_rate_sd 
+  
+  Z_vec <- c(Z_vec,phosphoacceptor_z)
+  dis_len_vec <- c(dis_len_vec,length(r4s_disorder))
+    
+}
+
+## Add to data frame
+
+csnk2a_disorder_sites_dates_filter_r4s <- data.frame(csnk2a_disorder_sites_dates_filter,dis_len_vec,Z_vec)
+
+# Remove NAs
+
+csnk2a_disorder_sites_dates_filter_r4s <- csnk2a_disorder_sites_dates_filter_r4s[!is.na(dis_len_vec),]
+
+# Filter disorder length less than 20 (we assume that a Z-score is not really meaningful below this sample size)
+
+csnk2a_disorder_sites_dates_filter_r4s_long <- csnk2a_disorder_sites_dates_filter_r4s[!csnk2a_disorder_sites_dates_filter_r4s[,9] < 20,]
+
+# Use the scoring function to calculate the substrate quality of the CK2 sites
+
+sq_vec <- NULL
+
+for (i in 1:nrow(csnk2a_disorder_sites_dates_filter_r4s_long)) {
+  
+  psite <- as.character(csnk2a_disorder_sites_dates_filter_r4s_long[i,6])
+  psite <- substr(psite,2,14)
+  sq <- ED_weight(psite, csnk2_pwm)
+  
+  sq_vec <- c(sq_vec,sq)
+  
+}
+
+# Add the substrate quality information to the data frame
+
+csnk2a_disorder_sites_dates_filter_r4s_long_sq <- data.frame(csnk2a_disorder_sites_dates_filter_r4s_long, sq_vec)
+
+# Filter out T sites and predicted and predicted hierarchical sites
+
+filter_dex <- substr(csnk2a_disorder_sites_dates_filter_r4s_long_sq[,6],8,8) == 'S' & !substr(csnk2a_disorder_sites_dates_filter_r4s_long_sq[,6],9,9) %in% 'S' & !substr(csnk2a_disorder_sites_dates_filter_r4s_long_sq[,6],11,11) %in% 'S'
+
+csnk2a_disorder_sites_dates_filter_r4s_long_sq_canon <- csnk2a_disorder_sites_dates_filter_r4s_long_sq[filter_dex,]
+
+```
+
+# Generate plot relating substrate quality to the rate4site metrics that were calculated for each phosphosite
+
+```{r}
+
+library(ggplot2)
+
+ED_list <- list()
+col1 <- NULL
+col2 <- NULL
+col3 <- NULL
+
+for (i in 0:7) {
+  
+  lower <- 0.1*i
+  upper <- lower+0.1
+  print(lower)
+  print(upper)
+  
+  if(lower > 0.65) {upper <- 1.0}
+  
+  # rate4site scores within a particular SQ interval
+  ED_rate <- csnk2a_disorder_sites_dates_filter_r4s_long_sq_canon[csnk2a_disorder_sites_dates_filter_r4s_long_sq_canon[,11] > lower & csnk2a_disorder_sites_dates_filter_r4s_long_sq_canon[,11] <= upper,10]
+  ED_list <- c(ED_list, list(ED_rate))
+  
+  col1 <- c(col1,ED_rate)
+  col2 <- c(col2,rep(paste(lower,'-',upper,sep=''),length(ED_rate)))
+  
+}
+
+# Generate input data frame for ggplot
+
+mss_data <- data.frame(col1,col2,stringsAsFactors = FALSE)
+mss_data[,2] <- as.factor(mss_data[,2])
+colnames(mss_data) <- c('EvoRate','Positions')
+
+# Generate the geom_violin for median + lower quartile + upper quartile
+
+  median.quartile <- function(x){
+  out <- quantile(x, probs = c(0.25,0.5,0.75))
+  names(out) <- c("ymin","y","ymax")
+  return(out) 
+}
+
+p <- ggplot(mss_data, aes(x=Positions, y=EvoRate)) + geom_violin(fill='white',color='black', lwd=1.05)
+p <- p +stat_summary(
+    fun.data = median.quartile, color = colors()[180], lwd=0.90)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+# Add the sample sizes
+
+p <- p+geom_text(data=data.frame(), aes(x=c(1:8), y=rep(3.5,8)), label=c(unname(table(mss_data[,2]))),col=colors()[190], fontface='plain', size=3.0)
+
+ggsave(file='Figure_4c.pdf', plot=p, width=6.5, height=4.8)
+
+saveRDS(mss_data,'Fig_4c_data.rds')
+
+```
+
+
+
+
+
