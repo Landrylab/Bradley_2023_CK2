@@ -549,6 +549,6 @@ p <- p + xlab('Substrate quality') + ylab(' median log2(fc)') + ggtitle('')
 p <- p+theme(plot.title = element_text(hjust = 0.5))
 p <- p + theme(panel.border= element_blank())
 p <- p + theme(legend.title=element_text(size=8.5),legend.text = element_text(size=10))
-p <- p+geom_richtext(x=0.68, y=-1.5, label='r<sub>s</sub> = -0.44',size=3.5,fontface='plain',col='black',label.color = NA)
+p <- p+geom_richtext(x=0.68, y=-1.5, label='r<sub>s</sub> = -0.625',size=3.5,fontface='plain',col='black',label.color = NA)
 
 ```
