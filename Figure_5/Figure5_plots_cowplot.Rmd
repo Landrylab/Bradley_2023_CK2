@@ -1,0 +1,262 @@
+---
+title: "Figure_5_plots_cowplot"
+author: "David Bradley"
+date: '2023-12-13'
+output: html_document
+---
+
+# Figure 5A
+
+```{r}
+
+library(cowplot)
+
+# Figure 5a
+
+m <- ggdraw() + draw_image('Figure_5a.png')
+
+g1 <- plot_grid(m,labels='A')
+
+```
+
+# Figure 5B plot
+
+```{r}
+
+# Load in data for Figure 5b
+figure_5b_data <- readRDS('Fig_5B_data.rds')
+
+# Take frequencies for each bin
+bin_count <- c(sum(figure_5b_data[1:3,3]),sum(figure_5b_data[4:6,3]),sum(figure_5b_data[7:9,3]),
+               sum(figure_5b_data[10:12,3]),sum(figure_5b_data[13:15,3]),sum(figure_5b_data[16:18,3]),
+               sum(figure_5b_data[19:21,3]),sum(figure_5b_data[22:24,3]))
+
+# Text labels for each bin
+bin_text <- c(rep('',2),bin_count[1],rep('',2),bin_count[2],rep('',2),bin_count[3],rep('',2),
+              bin_count[4],rep('',2),bin_count[5],rep('',2),bin_count[6],rep('',2),bin_count[7],rep('',2),bin_count[8])
+
+# ggplot
+p <- ggplot(figure_5b_data, aes(fill=Age, y=Count, x=SQ)) + 
+    geom_bar(position="fill", stat="identity",color='black',size=1, width=0.875)
+p <- p+scale_fill_manual(values=c(colors()[109], colors()[121], colors()[132]))
+p <- p+coord_cartesian(ylim=c(0,1.035))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15),panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+
+p <- p + ylab("Relative frequency") + xlab("Substrate quality") + ggtitle('')
+p <- p+theme(axis.text.x=element_text(size=9),axis.text.y=element_text(size=9.0),axis.title.x=element_text(size=11.5,face="bold"),axis.title.y=element_text(size=11.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+p <- p + theme(legend.title = element_text(size=9.5), legend.text = element_text(size=8))
+p <- p+geom_text(data=figure_5b_data, aes(x=SQ),y=rep(1.040,24),label=bin_text,col='black', fontface='plain', size=3.6)
+p <- p+theme(legend.margin=margin(0,0,0,0),legend.box.margin=margin(-10,-5,-10,-7))
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.15, hjust=1))
+p <- p + theme(axis.title.x = element_text(vjust = 4.00))
+p <- p + theme(axis.title.y = element_text(vjust = 0.00))
+
+# Margins
+p <- p + theme(plot.margin = unit(c(-0.15,0.75,0.035,0.2), "cm")) # t, r, b, l
+
+fig_5b <- p
+
+```
+
+# Figure 5B statistical analysis
+
+```{r}
+
+# Load in the full data set pertaining to this plot
+
+sup_tab_6 <- read.csv('supp_table_6_fig_4b.csv')
+
+# As a precaution, filter out sites with a substrate quality of 0
+
+sup_tab_6 <- sup_tab_6[sup_tab_6$SQ > 0,]
+
+# Spearman's correlation between substrate quality and age
+
+cor.test(sup_tab_6$SQ,sup_tab_6$age,method='spearman') # r = 0.149857, p = 0.00873
+
+```
+
+# Figure 5C (scatter visualisation)
+
+```{r}
+
+library(ggtext)
+
+sup_tab_6 <- read.csv('supp_table_6_fig_4c.csv')
+
+# Exclude sites with 0 substrate quality
+
+sup_tab_6 <- sup_tab_6[sup_tab_6[,12] > 0,]
+
+# ggplot the regression
+
+p <- ggplot(data=sup_tab_6, aes(x=SQ,y=z.scores)) + geom_point()
+p <- p + geom_smooth(method='lm',lwd=0.5)
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red", lwd=0.75)
+p <- p + theme_bw()
+p <- p + coord_cartesian(ylim=c(-3.35,3.35))
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
+p <- p + scale_x_continuous(breaks=c(0,0.25,0.50,0.75,1.00),limits=c(0,1.0))
+p <- p + scale_y_continuous(breaks=c(-3,-2,-1,0,1,2,3),limits=c(-3.35,3.35))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Text sizes
+p <- p+theme(axis.text=element_text(size=10.5),axis.title.x=element_text(size=11.5,face="bold"),axis.title.y=element_text(size=11.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+
+# Margins
+p <- p + theme(plot.margin = unit(c(-0.200,0.6,0.725,-0.10), "cm")) # t, r, b, l
+
+p <- p+geom_richtext(data = sup_tab_6[1,], x=0.875, y=3, label='r<sub>s</sub> = -0.205',size=3.25,fontface='plain',col='black',label.color = NA, fill = NA)
+p <- p+geom_richtext(data = sup_tab_6[1,], x=0.885, y=2.55, label='p=1.1x10<sup>-4</sup>',size=3.25,fontface='plain',col='black',label.color = NA, fill = NA)
+
+fig_5c <- p
+
+```
+
+# Figure 5C (violin visualisation - unused)
+
+```{r}
+
+figure_5c_data <- readRDS('Fig_5C_data.rds')
+
+# Generate the geom_violin for median + lower quartile + upper quartile
+
+median.quartile <- function(x){
+  out <- quantile(x, probs = c(0.25,0.5,0.75))
+  names(out) <- c("ymin","y","ymax")
+  return(out) 
+}
+
+p <- ggplot(figure_5c_data, aes(x=Positions, y=EvoRate)) + geom_violin(fill='white',color='black', lwd=1.05)
+p <- p +stat_summary(
+    fun.data = median.quartile, color = colors()[180], lwd=0.90)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+# Add the sample sizes
+
+p <- p+geom_text(data=data.frame(), aes(x=c(1:8), y=rep(3.5,8)), label=c(unname(table(figure_5c_data[,2]))),col=colors()[190], fontface='plain', size=3.0)
+
+```
+
+# Figure 5D left
+
+```{w}
+
+ggmsa_p <- readRDS('Figure_5D_left_middle_new.rds')
+
+```
+
+# Figure 5D right
+
+```{r}
+
+figure_5D_right <- readRDS('Figure_5D_right.rds')
+
+p <- ggplot(figure_5D_right, aes(x=mean, y=var,color=class)) + geom_point() + scale_color_manual(values=c('red','darkgrey'))
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.4, linetype="solid"))+theme(legend.position="none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+
+# Text
+p <- p+theme(axis.text.x=element_text(size=9.5),axis.text.y=element_text(size=9.5),axis.title.x=element_text(size=11.25,face="plain"),axis.title.y=element_text(size=11.35,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p+theme(legend.position="none")
+p <- p + ylab("SQ variance") + xlab("SQ mean") + ggtitle('G3BP1 S149')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p+theme(axis.title.x = element_text(vjust = 3.75))
+p <- p+theme(axis.title.y = element_text(vjust = -0.99))
+p <- p + theme(plot.margin = unit(c(1.05,0,0.65,0.3), "cm")) # t, r, b, l
+
+### save the data
+
+scatter_p <- p
+
+```
+
+# Figure 5E
+
+```{r}
+
+figure_5E_data <- readRDS('Figure_5E.rds')
+figure_5E_data <- as.matrix(figure_5E_data)
+figure_5E_data[4,1]<- '      no \n       difference'
+figure_5E_data <- data.frame(figure_5E_data)
+figure_5E_data[,2] <- as.numeric(figure_5E_data[,2])
+figure_5E_data$class <- factor(figure_5E_data$class, levels = c('high M \n low V','low V','high M','      no \n       difference'))
+
+p <- ggplot(figure_5E_data, aes(x=class, y=fraction, fill=class, width=.75)) + geom_bar(color=NA, lwd=0, stat='identity', alpha=0.55) + scale_fill_manual(values = c('red','red','red','red'))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p + ylab("Relative frequency") + xlab("") + ggtitle('All sites (n=299)')
+p <- p+theme(axis.text.x=element_text(size=7.5),axis.text.y=element_text(size=9.5),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=10.2,face="plain",vjust=-10),plot.title=element_text(size=11.5,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p+theme(axis.title.y = element_text(vjust = 0.5))
+p <- p + theme(plot.margin = unit(c(1.05,0.35,0.425,0.3), "cm")) # t, r, b, l
+
+sim_p <- p
+
+```
+
+# Figure 5d + Figure 5e
+
+```{r}
+
+g3 <- plot_grid(ggmsa_p, scatter_p, sim_p,nrow=1)
+
+```
+
+### Put everything together
+
+```{r}
+
+#5a
+
+m <- ggdraw() + draw_image('/home/david/Documents/Work/CK2_MS/Figure_5/Figure_5a/Figure_5a.png')
+
+g1 <- plot_grid(m,labels='A')
+
+
+#5b + 5c
+
+g2 <- plot_grid(fig_5b,fig_5c, labels=c('B','C'),rel_widths=c(1.0,0.75))
+
+# 5a +5b +5c
+
+g1_g2 <- plot_grid(g1,g2,nrow=2,rel_heights=c(0.80,1))
+
+# 5d + 5e
+
+g3 <- plot_grid(ggmsa_p, scatter_p, sim_p,nrow=1,rel_widths=c(1,0.65,0.65),labels=c('D','','E'),align='none')
+
+# 5a + 5b + 5c + 5d + 5e
+
+g4 <- plot_grid(g1_g2,g3,nrow=2,rel_heights=c(1,0.6))
+g4
+
+ggsave(file='Figure_5.pdf', plot=g4, width=8.5, height=9)
+
+```
+
+
