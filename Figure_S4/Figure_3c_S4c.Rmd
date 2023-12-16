@@ -1,0 +1,554 @@
+---
+title: "Figure 2C + Figure S8"
+author: "David Bradley"
+date: '2023-01-19'
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+
+```{r}
+
+library(gdata)
+library(readxl)
+
+# Read in the data from the Leutert et al., 2022 paper (differential phosphosite expression data)
+
+leutert_s6 <- read_xlsx('Table_S6.xlsx', skip=0, col_names=TRUE, sheet=2)
+leutert_s6 <- as.data.frame(leutert_s6)
+
+# Remove all conditions that were not performed over the course of 5 minutes
+
+leutert_s1 <- read_xlsx('Table_S1.xlsx', skip=0, col_names=TRUE, sheet=2)
+leutert_s1 <- as.data.frame(leutert_s1)
+mal_cond <- leutert_s1[leutert_s1[,4] != '5min',1]
+
+leutert_s6 <- leutert_s6[!leutert_s6[,7] %in% mal_cond,]
+
+```
+
+# Compile known yeast ck2 substrates from the literature
+
+```{r}
+
+# BioGRID pre-2011
+
+yeast_CK2_biogrid_pre_2011 <- read.table('Copy of cka_candidates - Yeast_substrates_biogrid (pre-2011).tsv',head=T,sep='\t')
+yeast_CK2_post_2011 <- read.table('Copy of cka_candidates - Yeast_substrates_literature (post-2011).tsv',head=T,sep='\t',fill=T)
+yeast_CK2_post_2011 <- yeast_CK2_post_2011[yeast_CK2_post_2011[,5] != '',]
+
+# Convert uniprot to ensembl
+
+library(clusterProfiler)
+library(org.Sc.sgd.db)
+uniprot_ensembl <- bitr(yeast_CK2_post_2011[,3], fromType="UNIPROT", toType=c("ENSEMBL"), OrgDb="org.Sc.sgd.db")
+uniprot <- uniprot_ensembl[match(yeast_CK2_post_2011[,3],uniprot_ensembl[,1]),1]
+ensembl <- uniprot_ensembl[match(yeast_CK2_post_2011[,3],uniprot_ensembl[,1]),2]
+
+yeast_CK2_biogrid_pre_2011 <- yeast_CK2_biogrid_pre_2011[,c(1,3,4)]
+yeast_CK2_post_2011 <- cbind(ensembl,yeast_CK2_post_2011[,c(4,5)])
+colnames(yeast_CK2_post_2011) <- colnames(yeast_CK2_biogrid_pre_2011)
+  
+yeast_CK2 <- rbind(yeast_CK2_biogrid_pre_2011,yeast_CK2_post_2011) 
+yeast_CK2[,3] <- substr(yeast_CK2[,3],2,14)
+
+```
+
+# Because there are so few known CK2 substrates for yeasts, we will also predict them based upon known interactions
+# and the presence of the CK2 motif
+
+```{r}
+
+# load in the data from biogrid
+
+cka1_biogrid <- read.table('BIOGRID-GENE-34955-4.4.217.DOWNLOADS/cka1_biogrid.txt',sep='\t', head=T)
+
+# Take all biogrid interactions supported by more than 4 piece of evidence
+# Based on analysis in the literature that demonstrates that the number of BioGRID supporting sources 
+# increases the accuracy of the prediction: https://genomebiology.biomedcentral.com/articles/10.1186/gb-2011-12-4-r39
+
+cka1_int_tab <- sort(table(c(cka1_biogrid[,c(6)],cka1_biogrid[,c(7)])))
+cka1_int <- names(which(cka1_int_tab > 4))
+
+# N.B. read.table gives parsing error
+
+cka2_biogrid <- readr::read_tsv('BIOGRID-GENE-34460-4.4.217.DOWNLOADS/cka2_biogrid.txt')
+cka2_biogrid <- as.data.frame(cka2_biogrid)
+
+# Take all biogrid interactions supported by more than 4 piece of evidence
+# Based on analysis in the literature that demonstrates that the number of BioGRID supporting sources 
+# increases the accuracy of the prediction: https://genomebiology.biomedcentral.com/articles/10.1186/gb-2011-12-4-r39
+
+cka2_int_tab <- sort(table(c(cka2_biogrid[,c(6)],cka2_biogrid[,c(7)])))
+cka2_int <- names(which(cka2_int_tab > 4))
+
+# combine
+cka_int <- unique(c(cka1_int,cka2_int))
+cka_int <- setdiff(cka_int,c('YIL035C','YOR061W'))
+
+# combine with the KID results (though there are few sites which actually pass the threshold)
+
+cka1_KID <- read.table('cka1_KID.txt',skip=8,sep='\t',head=T) 
+cka1_KID <- cka1_KID[cka1_KID$Score > 4.72,]
+cka1_int <- cka1_KID[,3]
+
+cka2_KID <- read.table('cka2_KID.txt',skip=8,sep='\t',head=T) 
+cka2_KID <- cka2_KID[cka2_KID$Score > 4.72,]
+cka2_int <- cka2_KID[,3]
+
+cka_int <- unique(c(cka_int,cka1_int,cka2_int))
+
+# From the Leutert dataset find all phosphosites that map to these proteins
+
+leutert_s5 <- read.csv('Table_S5.csv', skip=0)
+
+# subset for interactors
+
+leutert_s6_cka_int <- leutert_s6[leutert_s6[,2] %in% cka_int,]
+cka_int_phospho <- unique(leutert_s6_cka_int[,1])
+
+# Load in yeast proteome from SGD (needed because the IDs are systematic and not UniProt)
+
+sc_rp <- seqinr::read.fasta('orf_trans_all_R64-3-1_20210421.fasta',seqtype='AA')
+sc_ids <- names(sc_rp)
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:length(cka_int_phospho)) {
+  
+  phospho <- cka_int_phospho[i]
+  
+  # Retrieve the first element only
+  systematic_id <- unlist(strsplit(phospho,split='_'))[1]
+  pos <- readr::parse_number(unlist(strsplit(phospho,split='_'))[2])
+  
+  for (j in 1:length(systematic_id)) {
+    
+    pos <- pos
+    # Substrate sequence
+  
+    sub_seq <- unlist(seqinr::getSequence(sc_rp[sc_ids %in% systematic_id[j]]))
+    
+    #Remove stop codon
+    sub_seq <- sub_seq[-length(sub_seq)]
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+  
+}
+
+# Find those phosphosites mapping to cka1/cka2 interactors that match the S-D/E-x-D/E motif
+
+cka_int_phospho_motif <- cka_int_phospho[which(substr(psite_vec,9,9) %in% c('D','E') & substr(psite_vec,11,11) %in% c('D','E'))]
+ck2_site <- psite_vec[which(substr(psite_vec,9,9) %in% c('D','E') & substr(psite_vec,11,11) %in% c('D','E'))]
+
+# Construct a data frame on the basis of the protein id, the phosphosite position. and the site sequence
+biogrid_ck2 <- cbind(rapply(strsplit(cka_int_phospho_motif,split='_'), function(x) x[1]),readr::parse_number(rapply(strsplit(cka_int_phospho_motif,split='_'), function(x) x[2])),ck2_site)
+biogrid_ck2[,3] <- substr(biogrid_ck2[,3],2,14)
+
+# Combine data of the known substrates with that of the predicted substrates
+
+yeast_CK2 <- yeast_CK2[,-4]
+colnames(biogrid_ck2) <- colnames(yeast_CK2)
+
+yeast_CK2 <- rbind(yeast_CK2,biogrid_ck2)
+
+# Remove repeated entries
+yeast_CK2 <- yeast_CK2[!duplicated(yeast_CK2),]
+
+```
+
+# Calculate the substrate quality of yeast CK2 substrates
+
+```{r}
+
+library(stringr)
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential hierarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Bind flanking sequences to the original data frame
+
+csnk2a_ksr <- csnk2a_ksr[index_vec,]
+csnk2a_ksr <- csnk2a_ksr[!(p1s|p3s),]
+csnk2a_ksr <- cbind(csnk2a_ksr, psite_no_heira)
+
+# Construct the scoring function
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Scoring function for the calculation of CK2 substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+# Calculate sq of the known and predicted CK2 phosphosites
+
+sq_vec <- NULL
+
+for (i in 1:nrow(yeast_CK2)) {
+  
+  psite <- yeast_CK2[i,3]
+  sq <- ED_weight(psite,csnk2_pwm)
+  sq_vec <- c(sq_vec,sq)
+  
+}
+
+yeast_CK2 <- data.frame(yeast_CK2, sq_vec)
+yeast_CK2_ppi <- yeast_CK2
+
+# Filter out the hierarchical sites
+
+yeast_CK2 <- yeast_CK2[!(substr(yeast_CK2[,3],8,8) %in% c('S') | substr(yeast_CK2[,3],10,10) %in% c('S')),]
+
+```
+
+# Number of regulated conditions
+
+```{r}
+
+# Iterate through each of the known and predicted substrates and determine the
+# number of conditions under which it is upregulated and downregulated
+
+cond_vec <- NULL 
+up_vec <- NULL
+down_vec <- NULL
+
+for (i in 1:nrow(yeast_CK2)) {
+  
+  print(i)
+  
+  accession <- yeast_CK2[i,1]
+  pos <- yeast_CK2[i,2]
+  
+  substrate_df <- leutert_s6[leutert_s6[,2] %in% accession & leutert_s6[,6] %in% pos,]
+  if (nrow(substrate_df) == 0) {
+    up_vec <- c(up_vec,NA)
+    down_vec <- c(down_vec, NA)
+    next
+  }
+  
+  up <- length(which(substrate_df[,8] > 1 & substrate_df[,10] < 0.05))
+  up_vec <- c(up_vec, up)
+  
+  down <- length(which(substrate_df[,8] < -1 & substrate_df[,10] < 0.05))
+  down_vec <- c(down_vec, down)
+  
+}
+
+yeast_CK2_up <- data.frame(yeast_CK2,up_vec)
+yeast_CK2_up <- yeast_CK2_up[!is.na(yeast_CK2_up[,5]),]
+
+yeast_CK2_down <- data.frame(yeast_CK2,down_vec)
+yeast_CK2_down <- yeast_CK2_down[!is.na(yeast_CK2_down[,5]),]
+
+```
+
+# Supplementary figure 8
+
+```{r}
+
+up_df <- yeast_CK2_up[,(c(4,5))]
+down_df <- yeast_CK2_down[,(c(4,5))]
+
+up_df <- data.frame(up_df,rep('upregulation',nrow(up_df)))
+down_df <- data.frame(down_df,rep('downregulation',nrow(down_df)))
+
+colnames(up_df) <- c('SQ','cond','reg')
+colnames(down_df) <- c('SQ','cond', 'reg')
+
+reg_df <- rbind(up_df,down_df)
+
+## ggplot the data
+
+library(ggplot2)
+
+reg_names <- as_labeller(
+     c(`upregulation` = "Upregulation", `downregulation` = "Downregulation"))
+reg_df$reg = factor(reg_df$reg, levels=c('upregulation','downregulation'))
+
+p <- ggplot(reg_df, aes(x=SQ, y=cond,fill=reg)) + geom_point(stroke=0.75, shape=21, alpha=0.4, size=4.0)
+p <- p + facet_grid(cols = vars(reg),labeller=reg_names)+scale_fill_brewer(palette = "Set1", name = "reg")
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p+theme(axis.text=element_text(size=10.00),axis.title.x=element_text(size=12,face="plain"),axis.title.y=element_text(size=11.5,face="plain"),plot.title=element_text(size=11,face='plain'))
+p <- p+theme(strip.text = element_text(size = 10.0))
+p <- p
+p <- p+xlab('Substrate quality')+ylab('No. of regulated conditions')+ggtitle('Phosphorylation in S. cerevisiae')
+p <- p+theme(plot.title = element_text(hjust = 0.5, face= 'bold'))
+p <- p + theme(legend.position = "none")
+
+supp_fig_4c <- p
+
+ggsave(file='Supp_fig_4C.pdf', plot=p, width=6.5, height=4.25)
+
+```
+
+# For each phosphosite, find the number of conditions where the adjusted p-value is less than 0.05 and the absolute log2fc > 1 (i.e. a magnitude fold-change of at least 2).
+
+```{r}
+
+cond_vec <- NULL 
+up_vec <- NULL
+down_vec <- NULL
+
+for (i in 1:nrow(yeast_CK2)) {
+  
+  accession <- yeast_CK2[i,1]
+  pos <- yeast_CK2[i,2]
+  
+  substrate_df <- leutert_s6[leutert_s6[,2] %in% accession & leutert_s6[,6] %in% pos,]
+  if (nrow(substrate_df) == 0) {
+    up_vec <- c(up_vec,NA)
+    down_vec <- c(down_vec, NA)
+    next
+  }
+  
+  substrate_df <- substrate_df[substrate_df[,8] > 1 & substrate_df[,10] < 0.05,]
+  
+  if (nrow(substrate_df) == 0) {
+    up_vec <- c(up_vec,NA)
+    down_vec <- c(down_vec, NA)
+    next
+  }
+  
+  up <- median(substrate_df[,8])
+  up_vec <- c(up_vec, up)
+  
+}
+
+yeast_CK2_up <- data.frame(yeast_CK2,up_vec)
+yeast_CK2_up <- yeast_CK2_up[!is.na(yeast_CK2_up[,5]),]
+
+# 
+
+cond_vec <- NULL 
+down_vec <- NULL
+
+for (i in 1:nrow(yeast_CK2)) {
+  
+  accession <- yeast_CK2[i,1]
+  pos <- yeast_CK2[i,2]
+  
+  substrate_df <- leutert_s6[leutert_s6[,2] %in% accession & leutert_s6[,6] %in% pos,]
+  if (nrow(substrate_df) == 0) {
+    up_vec <- c(up_vec,NA)
+    down_vec <- c(down_vec, NA)
+    next
+  }
+  
+  substrate_df <- substrate_df[substrate_df[,8] < -1 & substrate_df[,10] < 0.05,]
+  
+  if (nrow(substrate_df) == 0) {
+    up_vec <- c(up_vec,NA)
+    down_vec <- c(down_vec, NA)
+    next
+  }
+  
+  down <- median(substrate_df[,8])
+  down_vec <- c(down_vec, down)
+  
+}
+
+yeast_CK2_down <- data.frame(yeast_CK2,down_vec)
+yeast_CK2_down <- yeast_CK2_down[!is.na(yeast_CK2_down[,5]),]
+
+## ggplot the correlation between the substrate quality and median log2fc for downreglated sites
+## (there are too few data points to do this for upregulation)
+
+library(ggtext)
+
+fc_df <- yeast_CK2_down[,c(4,5)]
+colnames(fc_df) <- c('SQ','reg')
+
+p <- ggplot(fc_df, aes(x=SQ, y=reg)) + geom_point(color='black',fill=colors()[131], stroke=1, shape=21, alpha=0.4, size=4.0) 
+p <- p+theme_bw() 
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=9.0,face="plain"),axis.title.y=element_text(size=9.0,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p + xlab('Substrate quality') + ylab(' median log2(fc)') + ggtitle('')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p <- p + theme(legend.title=element_text(size=8.5),legend.text = element_text(size=10))
+p <- p+geom_richtext(x=0.68, y=-1.5, label='r<sub>s</sub> = -0.625',size=3.5,fontface='plain',col='black',label.color = NA)
+
+```
