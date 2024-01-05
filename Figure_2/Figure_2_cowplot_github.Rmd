@@ -584,7 +584,7 @@ g3
 g4 <- plot_grid(g1,g2,g3,nrow=3)
 g4
 
-ggsave(file='/home/david/Documents/Work/CK2_revisions/Figure_2/Figure_2.pdf', plot=g4, width=8.5, height=6.25)
+ggsave(file='Figure_2.pdf', plot=g4, width=8.5, height=6.25)
 
 ```
   
