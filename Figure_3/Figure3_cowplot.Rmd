@@ -3,7 +3,7 @@ title: "Figure_3_cowplot"
 output: html_document
 ---
 
-# Plot figure2c
+# Plot figure 3c
 
 ```{r}
 
