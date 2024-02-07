@@ -1,0 +1,227 @@
+---
+title: "Figure_5_plots_cowplot"
+author: "David Bradley"
+date: '2023-12-13'
+output: html_document
+---
+
+# Supplementary figure 8A
+
+```{r}
+
+library(cowplot)
+
+# Load in data for supplementary figure 8a
+
+sup_fig_8_data <- readRDS('sup_fig_8A_data.rds')
+sup_fig_8_data <- data.frame(sup_fig_8_data, stringsAsFactors = F)
+sup_fig_8_data[,1] <- factor(c(rep('A',3),rep('S (non-phospho)',3),rep('S/T (phospho)',3),rep('S/T (CK2)',3)),levels = c("A", "S/T (phospho)", "S (non-phospho)", "S/T (CK2)"))
+
+factor(c("small", "large", "large", "small", "medium"),
+       levels = c("small", "medium", "large"))
+
+bin_count <- c(sum(sup_fig_8_data[1:3,3]),sum(sup_fig_8_data[4:6,3]),sum(sup_fig_8_data[7:9,3]),sum(sup_fig_8_data[10:12,3]))
+bin_text <- c(rep('',2),bin_count[1],rep('',2),bin_count[2],rep('',2),bin_count[3],rep('',2),bin_count[4])
+
+# ggplot
+p <- ggplot(sup_fig_8_data, aes(fill=age, y=freq, x=class)) + 
+    geom_bar(position="fill", stat="identity",color='black',size=1, width=0.875)
+p <- p+scale_fill_manual(values=c(colors()[109], colors()[121], colors()[132]))
+p <- p+coord_cartesian(ylim=c(0,1.035))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15),panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+
+p <- p + ylab("Relative frequency") + xlab("") + ggtitle('')
+p <- p+theme(axis.text.x=element_text(size=8.5),axis.text.y=element_text(size=9.0),axis.title.x=element_text(size=11.5,face="bold"),axis.title.y=element_text(size=11.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+p <- p + theme(legend.title = element_text(size=8.5), legend.text = element_text(size=8))
+p <- p + guides(fill = guide_legend(keywidth = 0.375))
+p <- p + guides(fill = guide_legend(keyheight = 0.9375))
+p <- p+geom_text(data=sup_fig_8_data, aes(x=class),y=rep(1.040,12),label=bin_text,col='black', fontface='plain', size=3.6)
+p <- p+theme(legend.margin=margin(0,0,0,0),legend.box.margin=margin(-10,-5,-10,-7))
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.05, hjust=1))
+p <- p + theme(axis.title.y = element_text(vjust = 0.00))
+
+# Margins
+p <- p + theme(plot.margin = unit(c(0,0.25,-0.75,0), "cm")) # t, r, b, l
+
+supp_fig_8a <- p
+
+```
+
+# Supplementary_figure 8B
+
+```{r}
+
+sup_fig_8B_data <- readRDS('sup_fig_8B_data.rds')
+sup_fig_8B_data <- as.matrix(sup_fig_8B_data)
+sup_fig_8B_data[which(sup_fig_8B_data[,2] %in% 'S \n (non-phospho)'),2] <- 'S (non-phospho)'
+sup_fig_8B_data[which(sup_fig_8B_data[,2] %in% 'S/T \n (phospho)'),2] <- 'S/T (phospho)'
+sup_fig_8B_data[which(sup_fig_8B_data[,2] %in% 'S \n (CK2)'),2] <- 'S (CK2)'
+sup_fig_8B_data <- as.data.frame(sup_fig_8B_data)
+sup_fig_8B_data$Class <- factor(sup_fig_8B_data$Class, levels = c('A','S (non-phospho)','S/T (phospho)','S (CK2)'))
+sup_fig_8B_data[,1] <- as.numeric(sup_fig_8B_data[,1])
+
+p <- ggplot(sup_fig_8B_data, aes(x=Class, y=EvoRate)) + geom_violin(fill='white',color='black', lwd=1.05) 
+
+p <- p +stat_summary(
+    fun.data = median.quartile, color = colors()[180], lwd=0.50)
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")) )
+
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("") + ggtitle('')
+#p <- p + theme(axis.title.y = element_text(vjust=-1.5))
+p <- p+theme(axis.text.x=element_text(size=9.0),axis.text.y=element_text(size=9.5),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=10.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
+
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red")
+p <- p+geom_text(data=data.frame(), aes(x=c(1:4), y=rep(10.5,4)),label=c(3901,4222,2410,322),col=colors()[190], fontface='plain', size=2.7)
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.05, hjust=1))
+p <- p + theme(plot.margin = unit(c(0,0.25,-0.45,0.225), "cm")) # t, r, b, l
+
+supp_fig_8B <- p
+
+```
+
+# Supplementary figure 8C
+
+```{r}
+
+# Load in data for Supplementary figure 8C
+
+sup_fig_8C_data <- readRDS('Supp_fig_8C_data.rds')
+
+bin_count <- c(sum(sup_fig_8C_data[1:3,3]),sum(sup_fig_8C_data[4:6,3]),sum(sup_fig_8C_data[7:9,3]),
+               sum(sup_fig_8C_data[10:12,3]),sum(sup_fig_8C_data[13:15,3]),sum(sup_fig_8C_data[16:18,3]),
+               sum(sup_fig_8C_data[19:21,3]),sum(sup_fig_8C_data[22:24,3]))
+
+# Text labels for each bin
+bin_text <- c(rep('',2),bin_count[1],rep('',2),bin_count[2],rep('',2),bin_count[3],rep('',2),
+              bin_count[4],rep('',2),bin_count[5],rep('',2),bin_count[6],rep('',2),bin_count[7],rep('',2),bin_count[8])
+
+# ggplot
+p <- ggplot(sup_fig_8C_data, aes(fill=Age, y=Count, x=SQ)) + 
+    geom_bar(position="fill", stat="identity",color='black',size=1, width=0.875)
+p <- p+scale_fill_manual(values=c(colors()[109], colors()[121], colors()[132]))
+p <- p+coord_cartesian(ylim=c(0,1.035))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15),panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+
+p <- p + ylab("Relative frequency") + xlab("Substrate quality") + ggtitle('')
+p <- p+theme(axis.text.x=element_text(size=9),axis.text.y=element_text(size=9.0),axis.title.x=element_text(size=11.5,face="bold"),axis.title.y=element_text(size=11.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+p <- p + theme(legend.title = element_text(size=9.5), legend.text = element_text(size=8))
+p <- p+geom_text(data=figure_5b_data, aes(x=SQ),y=rep(1.040,24),label=bin_text,col='black', fontface='plain', size=3.6)
+p <- p+theme(legend.margin=margin(0,0,0,0),legend.box.margin=margin(-10,-5,-10,-7))
+p <- p + theme(axis.text.x = element_text(angle = 30, vjust = 1.15, hjust=1))
+p <- p + theme(axis.title.x = element_text(vjust = 4.00))
+p <- p + theme(axis.title.y = element_text(vjust = 0.00))
+
+# Margins
+p <- p + theme(plot.margin = unit(c(-0.15,0.75,0.035,0.2), "cm")) # t, r, b, l
+
+supp_fig_8C <- p
+
+```
+
+# Supplementary figure 8D
+
+```{r}
+
+library(ggtext)
+
+sup_fig_8D_data <- readRDS('Supplementary_figure_8D.rds')
+
+# Exclude sites with 0 substrate quality
+
+sup_fig_8D_data <- sup_fig_8D_data[sup_fig_8D_data[,11] > 0,]
+
+# ggplot the regression
+
+p <- ggplot(data=sup_fig_8D_data, aes(x=sq_vec,y=Z_vec)) + geom_point()
+p <- p + geom_smooth(method='lm',lwd=0.5)
+p <- p + geom_hline(yintercept=0, linetype="dashed", color = "red", lwd=0.75)
+p <- p + theme_bw()
+p <- p + coord_cartesian(ylim=c(-3.35,3.35))
+p <- p + ylab("Evolutionary rate (z-score)") + xlab("Substrate quality") + ggtitle('')
+p <- p + scale_x_continuous(breaks=c(0,0.25,0.50,0.75,1.00),limits=c(0,1.0))
+p <- p + scale_y_continuous(breaks=c(-3,-2,-1,0,1,2,3),limits=c(-3.35,3.35))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))
+
+# Text sizes
+p <- p+theme(axis.text=element_text(size=10.5),axis.title.x=element_text(size=11.5,face="bold"),axis.title.y=element_text(size=11.5,face="bold"),plot.title=element_text(size=18,face='bold'))
+
+# Margins
+p <- p + theme(plot.margin = unit(c(-0.200,0.6,0.625,-0.10), "cm")) # t, r, b, l
+
+p <- p+geom_richtext(data = sup_tab_6[1,], x=0.875, y=3, label='r<sub>s</sub> = -0.150',size=3.25,fontface='plain',col='black',label.color = NA, fill = NA)
+p <- p+geom_richtext(data = sup_tab_6[1,], x=0.885, y=2.55, label='p=6.5x10<sup>-2</sup>',size=3.25,fontface='plain',col='black',label.color = NA, fill = NA)
+
+supp_fig_8D <- p
+
+```
+
+# Supplementary figure 8E
+
+```{r}
+
+sup_fig_8E_data <- readRDS('Supp_fig_8E_data.rds')
+sup_fig_8E_data <- as.matrix(sup_fig_8E_data)
+sup_fig_8E_data[4,1]<- '  no \n       difference'
+sup_fig_8E_data <- data.frame(sup_fig_8E_data)
+sup_fig_8E_data[,2] <- as.numeric(sup_fig_8E_data[,2])
+sup_fig_8E_data$class <- factor(sup_fig_8E_data$class, levels = c('high M \n low V','low V','high M','  no \n       difference'))
+
+p <- ggplot(sup_fig_8E_data, aes(x=class, y=fraction, fill=class, width=.75)) + geom_bar(color=NA, lwd=0, stat='identity', alpha=0.55) + scale_fill_manual(values = c('red','red','red','red'))
+
+# Font
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p + ylab("Relative frequency") + xlab("") + ggtitle('')
+p <- p+theme(axis.text.x=element_text(size=7.5),axis.text.y=element_text(size=9.5),axis.title.x=element_text(size=11,face="plain"),axis.title.y=element_text(size=12.0,face="plain",vjust=-10),plot.title=element_text(size=11.5,face='bold'))
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p+theme(axis.title.y = element_text(vjust = 0.5))
+p <- p + theme(plot.margin = unit(c(0.10,0.35,0.425,0.3), "cm")) # t, r, b, l
+
+supp_fig_8E <- p
+
+```
+
+# Cowplot (put it all together)
+
+```{r}
+
+library(cowplot)
+
+#
+
+s1 <- plot_grid(supp_fig_8a,supp_fig_8B,supp_fig_8E,labels=c('A','B','E'),rel_widths = c(1,0.85,0.75),nrow=1)
+
+#
+
+s2 <- plot_grid(supp_fig_8C,supp_fig_8D,labels=c('C','D'), rel_widths = c(1,0.725))
+
+#
+
+s3 <- plot_grid(s1,s2,nrow=2)
+
+ggsave(file='Supplementary_figure_8.pdf', plot=s3, width=8.5, height=6.0)
+
+```
+
+
