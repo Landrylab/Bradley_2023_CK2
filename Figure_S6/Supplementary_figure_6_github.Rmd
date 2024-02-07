@@ -1,0 +1,679 @@
+---
+title: "Supplementary figure 10"
+author: "David Bradley"
+date: "6/6/2022"
+output: html_document
+---
+
+# Retrieve the CK2 substrate information
+
+```{r}
+
+library(stringr)
+library(readr)
+library(seqinr)
+library(ggseqlogo)
+library(gdata)
+
+# Data comes from Bachmann et al., 2019 (https://www.biorxiv.org/content/10.1101/822668v3)
+
+prot_mapper <- read_csv('export.csv')
+
+# Kinases only
+
+prot_mapper <- prot_mapper[unlist(prot_mapper[,5]) == TRUE,]
+
+# Retrieve upstream kinase, substrate, and substrate position
+
+ksr <- prot_mapper[,c(3,4,6,9,10)]
+
+# We exclude KSRs that are supported only by the text-mining tools
+
+curated <- c('psp','signor','pid','bel','reactome')
+
+source_list <- strsplit(unlist(ksr[,5]),split=',')
+
+number_curated <- lapply(source_list, function(x) length(intersect(x,curated)))
+
+ksr <- ksr[which(number_curated > 0),]
+
+# Correct formatting problems
+
+for (i in 1:nrow(ksr)) {
+ 
+  if(is.na(ksr[i,2])) {ksr[i,2] <- ksr[i,1]} 
+  
+}
+
+# Retrieve CSNK2A1 and CSNK2A2 substrates
+
+csnk2a1_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A1') == TRUE),]
+csnk2a2_ksr <- ksr[which(unlist(ksr[,2] == 'CSNK2A2') == TRUE),]
+csnk2a_ksr <- unique(rbind(csnk2a1_ksr,csnk2a2_ksr)) 
+
+hs_rp <- read.fasta('hs_proteome_uniprot.fasta', seqtype='AA')
+hs_ids <- rapply(strsplit(names(hs_rp),split='\\|'),function(x) x[2])
+
+# Retrieve the flanking sequences of the CK2 phosphosites
+
+psite_vec <- NULL
+index_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  print(i)
+  
+  # Retrieve the first element only
+  uniprot_id <- unname(unlist(csnk2a_ksr[i,3]))
+  site_pos <- unname(unlist(csnk2a_ksr[i,4]))
+  
+  # Loop for ambiguous psite positions
+  
+  for (j in 1:length(uniprot_id)) {
+    
+    pos <- as.numeric(site_pos)
+    
+    # Substrate sequence
+  
+    sub_seq <- unlist(getSequence(hs_rp[hs_ids %in% uniprot_id[j]]))
+    
+    if (length(sub_seq) == 0) {next}
+    
+    # Phosphosite position
+    
+    if (pos < 8) {
+      
+      gap <- paste(rep('_',(8-pos)),collapse='')
+      psite <- paste(sub_seq[1:(pos+7)],collapse='')
+      psite <- paste(gap,psite,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else if ((pos+7) > length(sub_seq)) {
+      
+      psite <- paste(sub_seq[(pos-7):(length(sub_seq))],collapse='')
+      gap <- paste(rep('_',(pos+7)-length(sub_seq)),collapse='')
+      psite <- paste(psite,gap,sep='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    } else {
+      
+      psite <- paste(sub_seq[(pos-7):(pos+7)],collapse='')
+      if (!substr(psite,8,8) %in% c('S','T','Y')) {next}
+      psite_vec <- c(psite_vec, psite)
+      index_vec <- c(index_vec, i)
+      
+    }
+  } 
+}
+
+# Remove potential hierarchical sites
+bachmann_vec <- psite_vec
+p1s <- rapply(strsplit(psite_vec,split=''), function(x) x[9]) == 'S'
+p3s <- rapply(strsplit(psite_vec,split=''), function(x) x[11]) == 'S'
+psite_no_heira <- psite_vec[!(p1s|p3s)]
+
+# Bind it to the original data frame
+
+csnk2a_ksr <- csnk2a_ksr[index_vec,]
+csnk2a_ksr <- csnk2a_ksr[!(p1s|p3s),]
+csnk2a_ksr <- cbind(csnk2a_ksr, psite_no_heira)
+
+# Construct the scoring function
+
+source('match-tm.r')
+csnk2_pwm <- makePWM(substr(psite_no_heira,2,14))
+
+# Scoring function to calculate the CK2 substrate quality
+
+ED_weight <- function(psite,pwm) {
+  
+  neg_row <- apply(pwm[rownames(pwm) %in% c('D','E'),],2,sum)
+  pwm <- pwm[!rownames(pwm) %in% c('D','E'),]
+  pwm <- rbind(pwm,neg_row)
+  rownames(pwm)[nrow(pwm)] <- 'DE'
+  
+  psite <- unlist(strsplit(psite,split=''))
+  
+  c=0
+  min=0
+  
+  # Ignore the central residue
+  for (i in c(1:6,8:13)) {
+    
+    aa <- psite[i]  
+    if (aa %in% c('D','E')) {aa <- 'DE'}
+    
+    # Skip if the amino acid is not D or E
+    if (!(aa %in% c('DE'))) {next}
+    
+    current <- pwm[rownames(pwm) %in% aa,i]
+    c = c+current
+  
+  }
+  
+  maximum <- sum(pwm[rownames(pwm) == 'DE',][c(1:6,8:13)])
+  mss = c/maximum
+  
+  return(unname(mss))
+  
+}
+
+# Calculate the substrate qualities
+
+sq_vec <- NULL
+
+for (i in 1:nrow(csnk2a_ksr)) {
+  
+  psite <- as.character(csnk2a_ksr[i,6])
+  psite <- substr(psite,2,14)
+  sq <- ED_weight(psite, csnk2_pwm)
+  
+  sq_vec <- c(sq_vec,sq)
+  
+}
+
+# Add to the data frame
+
+csnk2a_ksr_sq <- cbind(csnk2a_ksr, sq_vec)
+colnames(csnk2a_ksr_sq) <- c('kinase_acc','kinase_gene','substrate_acc','pos','sources','psite','SQ')
+
+# Unique substrates only
+
+csnk2a_ksr_sq_unique <- csnk2a_ksr_sq[!duplicated(csnk2a_ksr_sq[c(3,4)]),]
+
+```
+
+# Assign GO terms to the background (we use as our background high-confidence sites in Ochoa et al., 2019)
+
+```{r}
+
+if (!requireNamespace("BiocManager", quietly=TRUE)) + install.packages("BiocManager")
+BiocManager::install()
+BiocManager::install("topGO")
+
+library(topGO)
+
+### Human data
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+ochoa <- read_xlsx('Ochoa_supplementary_3.xlsx', skip=0, col_names=TRUE, sheet=1)
+name <- ochoa[,1]
+pos <- ochoa[,2]
+
+#### Read in the high-confidence human phosphosites
+
+## GO human phosphoproteome
+
+geneNames <- unique(unname(unlist(ochoa[,1])))
+geneNames <- unique(geneNames)
+
+# Retrieve GO terms using the UniProt websites
+
+write.table(geneNames,'human_phosphoproteome_uniprot.txt',row.names=FALSE,col.names=FALSE,quote=FALSE)
+human_phosphoproteome_GO <- read.table('human_phosphoproteome_GO.txt',header=TRUE,sep='\t',stringsAsFactors = FALSE)
+
+# Parse out the GO terms
+
+GO_terms <- as.list(human_phosphoproteome_GO[,c(3)])
+GO_terms <- gsub(';','',GO_terms)
+names(GO_terms) <- human_phosphoproteome_GO[,c(1)]
+GO_terms <- strsplit(GO_terms,split=' ')
+
+```
+
+# Combine known CK2 substrates with predicted CK2 substrates to maximise power for GO enrichment analysis. Predictions made on the basis of CK2 motif matches to transient CK2 interactors
+
+```{r}
+
+## Find the BioID accessions first
+
+library(gdata)
+
+Ishi_CK2_BioID <- read.xls('Ishihama_CK2_BioID.xlsx',sheet=3, stringsAsFactors = FALSE, head = TRUE, skip = 2)
+Ishi_CK2_BioID <- Ishi_CK2_BioID[Ishi_CK2_BioID[,24] > 0,]
+
+# Take top 407 CK2 interactors (the number of reported interactors in Niinae et al., 2021)
+
+Ishi_CK2_BioID_significant <- Ishi_CK2_BioID[order(Ishi_CK2_BioID[,25],decreasing=T),][1:407,]
+CK2_BioID_accessions <- rapply(strsplit(Ishi_CK2_BioID_significant[,3],split='\\|'), function(x) x[2])
+
+## Find the high-confidence phosphosites that map to the CK2-neighbouring proteins
+
+hs_proteome <- read.fasta('human_proteome_reviewed.fasta', seqtype = 'AA')
+hs_proteome_id <- rapply(strsplit(names(hs_proteome),split='\\|'), function(x) x[2])
+
+ochoa_ck2_bioid <- ochoa[unlist(name[,1]) %in% CK2_BioID_accessions,]
+ochoa_ck2_bioid <- data.frame(ochoa_ck2_bioid)
+
+ksr_df <- NULL
+isoform_df <- NULL
+missing_df <- NULL
+
+for (i in 1:nrow(ochoa_ck2_bioid)) {
+  
+  print(i)
+  
+  sub_id <- ochoa_ck2_bioid[i,1]
+  sub_pos <- ochoa_ck2_bioid[i,2]
+  sub_pos <- as.numeric(sub_pos)
+  
+  seq_dex <- match(sub_id,hs_proteome_id)
+  
+  # Check for missing IDs and sequences
+  
+  if (is.na(seq_dex)) {
+    missing_vec <- c(sub_id, sub_pos)
+    missing_df <- rbind(missing_df, missing_vec)
+    next
+  }
+  
+  seq <- getSequence(hs_proteome[seq_dex])[[1]]
+  
+  #Check for psites at terminal positions
+  if (sub_pos > 7 & length(seq)-sub_pos >= 7) {
+    psite <- seq[(sub_pos-7):(sub_pos+7)]  
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At N-terminus
+  if (sub_pos <= 7) {
+    psite <- seq[1:(sub_pos+7)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',8-sub_pos),collapse='')
+    psite <- str_c(gap,psite,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!str_sub(psite,8,8) %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  # At C-terminus
+  if (length(seq)-sub_pos < 7) {
+    psite <- seq[(sub_pos-7):length(seq)]  
+    psite <- str_c(psite,collapse='')
+    gap <- str_c(rep('_',7-(length(seq)-sub_pos)),collapse='')
+    psite <- str_c(psite,gap,collapse='')
+    
+    # Check for non-canonical isoforms
+    if (!psite[8] %in% c('S','T','Y') | sub_pos > length(seq)) {
+      isoform_vec <- c(sub_id,sub_pos)
+      isoform_df <- rbind(isoform_df, isoform_vec)
+      next
+    }
+    
+    psite <- str_c(psite,collapse = '')
+    
+  }
+  
+  ksr_seq <- c(sub_id,sub_pos,psite)
+  ksr_df <- rbind(ksr_df,ksr_seq)
+  
+}
+
+rownames(ksr_df) <- NULL
+
+# Predict CK2 substrates on the basis to the match to the S-D/E-x-D/E motif
+
+ck2_sites <- unname(ksr_df[,3])
+ck2_sites <- substr(ck2_sites,2,14)
+ck2_dex <- rapply(strsplit(ck2_sites,split=''), function(x) x[8] %in% c('D','E')) & rapply(strsplit(ck2_sites,split=''), function(x) x[10] %in% c('D','E'))
+ksr_df_ck2 <- ksr_df[ck2_dex,]
+
+ck2_sites <- unname(ksr_df_ck2[,3])
+ck2_sites <- substr(ck2_sites,2,14)
+
+mss_vec <- NULL
+
+for (i in 1:length(ck2_sites)) {
+  
+  mss <- NULL
+  ck2_site <- ck2_sites[i]
+  mss <- ED_weight(ck2_site,csnk2_pwm)
+  if (length(mss) == 0) {break}
+  mss_vec <- c(mss_vec, mss)
+  
+}
+
+ksr_df_ck2_sq <- cbind(ksr_df_ck2,mss_vec)
+rownames(ksr_df_ck2_sq) <- NULL
+ksr_df_ck2_sq[,4] <- round(as.numeric(ksr_df_ck2_sq[,4]),7)
+
+```
+
+# Combine known and predicted substrates
+
+```{r}
+
+# To maximise the sample size, we will combine the known and predicted substrates. 
+
+ck2_known <- csnk2a_ksr_sq_unique[,c(3,4,6,7)]
+ck2_predicted <- ksr_df_ck2_sq[,c(1,2,3,4)]
+ck2_predicted <- as.data.frame(ck2_predicted)
+colnames(ck2_predicted) <- colnames(ck2_known)
+ck2_known_predicted <- rbind(ck2_known,ck2_predicted)
+ck2_known_predicted_unique <- ck2_known_predicted[!duplicated(ck2_known_predicted[,c(1,2)]),]
+
+```
+
+# GO analysis for strong sites (substrate quality greater than or equal to 0.6)
+
+```{r}
+
+# Here, 'geneNames' represents the protein universe that we extracted from the high-confidence phosphosite data
+
+ck2_optimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) >= 0.6,1]
+myInterestingGenes <- ck2_optimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+
+# Run the GO enrichment analysis
+
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 20, numChar=50)
+
+# Here I will filter the table to remove redundant GO terms (e.g. mRNA processing and RNA processing)
+
+# Overall, there is a strong association with RNA processing and metabolism, nitrogen metabolism, and ribonucleoprotein assembly among some others
+
+# GO terms for supplementary figure 4 (optimal sites)
+
+GOtable_optimal <- GOtable
+GOtable_optimal_S4 <- GOtable_optimal[c(3,5,7,11,18,12,13,25),]
+
+```
+
+# GO analysis for weak sites (substrate quality less than 0.3)
+
+```{r}
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) < 0.3,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+
+# Run the GO enrichment analysis
+
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 20, numChar=50)
+
+# Here I will filter the table to remove redundant GO terms 
+
+# Overall, enrichment for regulation of metabolic processes and regulation of molecular function. Also an enrichment for apoptosis.
+
+# GO terms for supplementary figure 4 (minimal sites)
+
+GOtable_minimal <- GOtable
+GOtable_minimal_S4 <- GOtable_minimal[c(1,3,4,5,12,15,10,9,14,17,18),]
+
+```
+
+# GO analysis for intermediate sites (substrate greater than 0.3 and less than 0.6)
+
+```{r}
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) > 0.3 & as.numeric(ck2_known_predicted_unique[,4]) < 0.6,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+
+# Run the GO enrichment analysis
+
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 20, numChar=50)
+
+GOtable_intermediate <- GOtable
+
+# Overall, enrichment for regulation of metabolic processes and regulation of molecular function. Also an enrichment for apoptosis.
+
+# GO terms for supplementary figure 4
+
+# Here I will filter the table to remove redundant GO terms 
+
+GOtable_intermediate_S4 <- GOtable_intermediate[c(4,8,12,11,17,22),]
+
+```
+
+# Extract enrichments ratios (fg/bg) for all relevant GO terms
+
+```{r}
+
+# Collect all of the GO terms
+
+GOtable_S4  <- rbind(GOtable_minimal_S4,GOtable_intermediate_S4,GOtable_optimal_S4)
+GOtable_S4 <- GOtable_S4[!duplicated(GOtable_S4[,1]),]
+GO_terms_all <- GOtable_S4[,1]
+
+# GO strong
+
+ck2_optimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) >= 0.6,1]
+myInterestingGenes <- ck2_optimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 10000, numChar=50)
+GOtable_optimal <- GOtable
+
+# GO intermediate
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) > 0.3 & as.numeric(ck2_known_predicted_unique[,4]) < 0.6,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 10000, numChar=50)
+GOtable_intermediate <- GOtable
+
+# GO weak
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) < 0.3,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 10000, numChar=50)
+GOtable_minimal <- GOtable
+
+### Iterate through each of the GO terms and extract the enrichment for each one of the three categories (weak, intermediate, and strong)
+
+go_df <- NULL
+
+for (i in 1:length(GO_terms_all)) {
+  
+  # optimal
+  
+  GO_term <- GO_terms_all[i]
+  GO_term_optimal <- GOtable_optimal[GOtable_optimal[,1] == GO_term,]
+  if(nrow(GO_term_optimal) == 0) {stop('Cannot find GO term optimal')}
+  GO_description <- GO_term_optimal[,2]
+  ratio <- GO_term_optimal[,4]/GO_term_optimal[,5]
+  log2_ratio_optimal <- log(ratio,base=2)
+  
+  # intermediate
+  
+  GO_term_intermediate <- GOtable_intermediate[GOtable_intermediate[,1] == GO_term,]
+  if(nrow(GO_term_intermediate) == 0) {stop('Cannot find GO term intermediate')}
+  ratio <- GO_term_intermediate[,4]/GO_term_intermediate[,5]
+  log2_ratio_intermediate <- log(ratio,base=2)
+  
+  # minimal
+  
+  GO_term_minimal <- GOtable_minimal[GOtable_minimal[,1] == GO_term,]
+  if(nrow(GO_term_minimal) == 0) {stop('Cannot find GO term minimal')}
+  ratio <- GO_term_minimal[,4]/GO_term_minimal[,5]
+  log2_ratio_minimal <- log(ratio,base=2)
+  
+  go_vec <- c(GO_term, GO_description, log2_ratio_minimal, log2_ratio_intermediate, log2_ratio_optimal)
+  go_df <- rbind(go_df,go_vec)
+  
+}
+
+```
+
+# Plot the heatmap
+
+```{r}
+
+library(ComplexHeatmap)
+library('RColorBrewer')
+library(circlize)
+library(viridis)
+
+# Matrix for the heatmap
+
+go_enrichments <- matrix(as.numeric(go_df[,c(3,4,5)]),ncol=3)
+rownames(go_enrichments) <- go_df[,2]
+colnames(go_enrichments) <- c('Minimal','Intermediate','Optimal')
+rownames(go_enrichments)[1] <- c('positive regulation of nitrogen compound metabolic process')
+rownames(go_enrichments)[5] <- c('positive regulation of nucleobase-containing compound')
+
+Heatmap(go_enrichments,cluster_columns=FALSE,cluster_rows=FALSE,col=colorRamp2(breaks=seq(0,3,length.out=8),colors=rev(mako(12)[5:12])),
+        row_names_side='left',
+        width=unit(4,'cm'),
+        border=TRUE,
+        row_names_gp=gpar(fontsize = 6),
+        column_names_gp=gpar(fontsize=10,fontface=1),
+        
+        # legend
+        
+        heatmap_legend_param = list(
+    at = c(0,3),
+    labels = c("0", "3"),
+    title = "log2(enrichment)",
+    legend_height = unit(2, "cm"),
+    legend_width = unit(2, "cm"),
+    border='black',
+    lwd=1.7,
+    title_position = "leftcenter-rot"
+))
+
+# write out table
+write.csv(go_enrichments,'Figure_2F.csv')
+
+```
+
+# Generate supplementary table 3 (top 1000 GO terms for each category)
+
+```{r}
+
+# GO strong
+
+ck2_optimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) >= 0.6,1]
+myInterestingGenes <- ck2_optimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 1000, numChar=50)
+GOtable_optimal <- GOtable
+
+ratio <- GOtable_optimal[,4]/GOtable_optimal[,5]
+log2_ratio <- log(ratio,base=2)
+ratio <- round(ratio,4)
+log2_ratio <- round(log2_ratio,4)
+
+GOtable_optimal_xlsx <- cbind(GOtable_optimal[,1:5],ratio,log2_ratio,GOtable_optimal[,6])
+colnames(GOtable_optimal_xlsx) <- c('GO.ID','Term','Annotated','Significant','Expected','Enrichment','log2(Enrichment)','classicFisher')
+
+# GO intermediate
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) > 0.3 & as.numeric(ck2_known_predicted_unique[,4]) < 0.6,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 1000, numChar=50)
+GOtable_intermediate <- GOtable
+
+ratio <- GOtable_intermediate[,4]/GOtable_intermediate[,5]
+log2_ratio <- log(ratio,base=2)
+ratio <- round(ratio,4)
+log2_ratio <- round(log2_ratio,4)
+
+GOtable_intermediate_xlsx <- cbind(GOtable_intermediate[,1:5],ratio,log2_ratio,GOtable_intermediate[,6])
+colnames(GOtable_intermediate_xlsx) <- c('GO.ID','Term','Annotated','Significant','Expected','Enrichment','log2(Enrichment)','classicFisher')
+
+# GO weak
+
+ck2_minimal_IDs <- ck2_known_predicted_unique[as.numeric(ck2_known_predicted_unique[,4]) < 0.3,1]
+myInterestingGenes <- ck2_minimal_IDs
+geneList <- factor(as.integer(geneNames %in% myInterestingGenes))
+names(geneList) <- geneNames
+str(geneList)
+GOdata <- new("topGOdata", ontology = "BP", allGenes = geneList, annot = annFUN.gene2GO, gene2GO = GO_terms)
+test.stat <- new("classicCount", testStatistic = GOFisherTest, name = "Fisher test")
+resultFisher <- getSigGroups(GOdata, test.stat)
+GOtable <- GenTable(GOdata, classicFisher = resultFisher,ranksOf = "classicFisher", topNodes = 1000, numChar=50)
+GOtable_minimal <- GOtable
+
+ratio <- GOtable_minimal[,4]/GOtable_minimal[,5]
+log2_ratio <- log(ratio,base=2)
+ratio <- round(ratio,4)
+log2_ratio <- round(log2_ratio,4)
+
+GOtable_minimal_xlsx <- cbind(GOtable_minimal[,1:5],ratio,log2_ratio,GOtable_minimal[,6])
+colnames(GOtable_minimal_xlsx) <- c('GO.ID','Term','Annotated','Significant','Expected','Enrichment','log2(Enrichment)','classicFisher')
+
+```
+
+# Write out supplementary table 3
+
+```{r}
+
+library(xlsx)
+
+write.xlsx(GOtable_minimal_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Minimal", col.names = TRUE, row.names = TRUE, append = FALSE)
+write.xlsx(GOtable_intermediate_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Intermediate", col.names = TRUE, row.names = TRUE, append = TRUE)
+write.xlsx(GOtable_optimal_xlsx, file='Supplementary_table_3.xlsx', sheetName = "Optimal", col.names = TRUE, row.names = TRUE, append = TRUE)
+
+```
+
+
+
+
+
