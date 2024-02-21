@@ -1,0 +1,109 @@
+---
+title: "Figure 6C"
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+# Read in the peptide array data 
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+
+ck2_peptide_library <- read_xlsx('CK2_peptides_library.xlsx', skip=0, col_names=TRUE, sheet=1)
+
+## CLIP170 synthetic mutants (i.e. not orthologues)
+
+ck2_peptide_library_clip170 <- ck2_peptide_library[331:417,]
+ck2_peptide_library_clip170 <- as.data.frame(ck2_peptide_library_clip170)
+
+clip170_syst_mut <- ck2_peptide_library_clip170[,6]
+
+# Represent 0 values as 1 (because we need to take logs)
+clip170_syst_mut[clip170_syst_mut == 0] <- 1
+
+## CLIP170 orthologues one2many
+
+ck2_peptide_library_clip170_ortho <- ck2_peptide_library[419:473,]
+ck2_peptide_library_clip170_ortho <- as.data.frame(ck2_peptide_library_clip170_ortho)
+
+ck2_peptide_library_clip170_one2many_ortho <- ck2_peptide_library_clip170_ortho[grep('one2many',ck2_peptide_library_clip170_ortho[,5]),6]
+
+# Represent 0 values as 1 (because we need to take logs)
+ck2_peptide_library_clip170_one2many_ortho[ck2_peptide_library_clip170_one2many_ortho == 0] <- 1
+
+## CLIP170 orthologues one2one
+
+ck2_peptide_library_clip170_one2one_ortho <- ck2_peptide_library_clip170_ortho[grep('one2one',ck2_peptide_library_clip170_ortho[,5]),6]
+
+# Represent 0 values as 1 (because we need to take logs)
+ck2_peptide_library_clip170_one2one_ortho[ck2_peptide_library_clip170_one2one_ortho == 0] <- 1
+
+```
+
+## Plot the log10 phosphosignals for the 3 different cageories
+
+```{r}
+
+syst_mut_log10 <- log(clip170_syst_mut, base=10)
+one2many_log10 <- log(ck2_peptide_library_clip170_one2many_ortho,base=10)
+one2one_log10 <- log(ck2_peptide_library_clip170_one2one_ortho,base=10)
+
+## construct df
+
+col1 <- c(rep('mutants',length(syst_mut_log10)),rep('one2many',length(one2many_log10)),rep('one2one',length(one2one_log10)))
+col2 <- c(syst_mut_log10,one2many_log10,one2one_log10)
+
+phosphosignal_df <- data.frame(col1,col2) 
+colnames(phosphosignal_df) <- c('class','phosphosignal')
+
+## ggplot
+
+library(viridis)
+
+median.quartile <- function(x){
+  out <- quantile(x, probs = c(0.25,0.5,0.75))
+  names(out) <- c("ymin","y","ymax")
+  return(out) 
+}
+
+p <- ggplot(phosphosignal_df, aes(x=class, y=phosphosignal,color=class)) + geom_jitter(position=position_jitter(0.1),cex=2.0,alpha=0.5)
+p <- p + stat_summary(fun.data=median.quartile, 
+                 geom="pointrange", color="black", lwd=0.5)
+p <- p + theme(legend.position = "none") # axis.line = element_blank(), panel.border = element_blank())
+p <- p+scale_color_manual(values=c('grey',cividis(7)[6],cividis(7)[2]))
+
+p <- p+theme_bw() + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+
+# Ticks
+p <- p+theme(axis.ticks.length=unit(-0.10, "cm"), axis.text.x = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")), axis.text.y = element_text(margin=unit(c(0.2,0.2,0.2,0.2), "cm")))
+p <- p+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=8,face="plain"),axis.title.y=element_text(size=8,face="plain"),plot.title=element_text(size=12,face='bold'))
+p <- p+theme(legend.position="none")
+p <- p + ylab("log10 (phospho-signal)") + xlab("") + ggtitle('')
+p <- p+theme(plot.title = element_text(hjust = 0.5))
+p <- p + theme(panel.border= element_blank())
+p
+
+######
+
+ggsave(file='Figure_6C.pdf', plot=p, width=2.0, height=3.0)
+
+```
+
+
+
+

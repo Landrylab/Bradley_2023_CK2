@@ -1,0 +1,160 @@
+---
+title: "Figure 6A"
+output: html_document
+---
+
+# First prune the rooted tree in ape to remove the rooted sequences
+
+```{r}
+
+library(ape)
+
+phy <- ape::read.tree('CLIP170_phylo_rooted.fa.treefile')
+phy <- drop.tip(phy,'homo_sapiens.3_other_paralog_Bilateria/1-1272')
+write.tree(phy,'CLIP170_phylo_rooted_pruned.fa.treefile')
+
+```
+
+# Read in the tree to ggtree and distinguish between 1-to-1 and 1-to-many
+
+```{r}
+
+library(ggtree)
+library(treeio)
+
+tree <- treeio::read.newick('CLIP170_phylo_rooted_pruned.fa.treefile')
+
+# rename the taxa to give a cleaner output
+
+old_tips <- tree$tip.label
+new_tips <- unlist(lapply(strsplit(old_tips,split='_'), function(x) paste(x[c(1,2)],collapse=' ')))
+new_tips <-  gsub('.1','',new_tips)
+new_tips <-  gsub('.2','',new_tips)
+new_tips <-  gsub('.5','',new_tips)
+genus <- rapply(strsplit(new_tips,split=' '),function(x)x[1])
+genus <- paste(toupper(substr(genus,1,1)),'.',sep='')
+species <- rapply(strsplit(new_tips,split=' '),function(x)x[2])
+new_tips <- paste(genus,species)
+
+data <- data.frame(old_tips,new_tips)
+
+tree <- rename_taxa(tree, data, key = 1, value = 2)
+
+# Tree with tips
+
+p <- ggtree(tree) + geom_tiplab() + geom_treescale()
+
+# Highlight node of interest (ancestral to all 1-to-1)
+
+nodes <- 63
+
+p2 <- p + geom_point2(aes(subset=(node %in% nodes)),shape=21,col="black",fill='red',size=7, alpha=0.65, stroke=1.2)
+
+# Try instead to color branches to separate out the one2one and one2many clades
+
+one2one <- new_tips[grep('one2one',old_tips)]
+
+legend_title <- ''
+
+tree2 <- groupOTU(tree, one2one)
+p3 <- ggtree(tree2, aes(color=group)) + geom_tiplab() + theme(legend.position="bottom") +   
+    scale_color_manual(legend_title,values=c(cividis(7)[6],cividis(7)[2]),labels=c('one2many','one2one'))
+
+```
+
+### Annotate the tree with the phosphorylation values that were obtained experimentally
+
+```{r}
+
+library(viridis)
+library(viridisLite)
+library(tidyverse)
+
+# Read in the clip170 ortho data
+
+old_tips_truncated <- rapply(strsplit(old_tips,split='/'), function(x) x[1])
+
+clip170_ortho_phospho <- read.csv('clip170_ortho_phosphosignal.csv',head=F)
+
+phylo_match <- match(old_tips_truncated,clip170_ortho_phospho[,5])
+phylo_match <- phylo_match[!is.na(phylo_match)]
+
+clip170_ortho_phospho_phylo <- clip170_ortho_phospho[phylo_match,]
+
+# Reformat the sequence names
+
+clip170_ortho_phospho_phylo[,5] <- new_tips
+
+# log the phosphosignal
+
+clip170_ortho_phospho_phylo[,6] <- log(clip170_ortho_phospho_phylo[,6],base=10)
+clip170_ortho_phospho_phylo[clip170_ortho_phospho_phylo[,6] < 0,6] <- NA 
+phosphosignal <- data.frame(clip170_ortho_phospho_phylo[,c(6)])
+rownames(phosphosignal) <- clip170_ortho_phospho_phylo[,c(5)]
+colnames(phosphosignal) <- 'phospho-signal'
+
+# generate the heatmap
+
+p4 <- gheatmap(p3, phosphosignal,width=0.10,color='black',offset=0.25,font.size=3.5) + scale_fill_viridis_c(option="rocket", name="log10",direction=-1,begin=0.35,na.value='white')
+
+```
+
+# Align to the MSA using ggmsa()
+
+```{r}
+
+library(ggmsa)
+library(Biostrings)
+
+seqinr::write.fasta(as.list(clip170_ortho_phospho_phylo[,1]),names=clip170_ortho_phospho_phylo[,5],file='clip170_ggmsa.fa')
+x <- readAAStringSet('clip170_ggmsa.fa')
+data <- tidy_msa(x)
+
+## Trying to combine directly with the heatmap annotation does not work
+
+p5 <- p4 + geom_facet(geom = geom_msa, data = data, panel = 'msa', color = "Chemistry_AA", char_width=0.5)+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank()
+)
+
+###
+
+# We can align the MSA to the tree but not to the tree+heatmap at the same time
+
+# Combining the MSA and the heatmap therefore has to be done in Inkscape
+
+p3_test <- p3+hexpand(.075, direction = 1)
+
+p5 <- p3_test + geom_facet(geom = geom_msa, data = data, panel = 'msa', color = "Chemistry_AA", char_width=0.5)+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank(),
+  legend.position = "none"
+) 
+
+# Adjust relatuve widths
+
+p6 <- facet_widths(p5,c(0.7,0.3))
+
+```
+
+## Save the relevant ggtrees
+
+```{r}
+
+p3_test <- ggtree(tree2, aes(color=group)) + geom_tiplab(size=2.5) + theme(legend.position="bottom") +   
+    scale_color_manual(legend_title,values=c(cividis(7)[6],cividis(7)[2]),labels=c('one2many','one2one'))
+
+p4_test <- gheatmap(p3_test, phosphosignal,width=0.08,color='black',offset=0.25,font.size=2.5) + scale_fill_viridis_c(option="rocket", name="log10",direction=-1,begin=0.35,na.value='white')
+
+ggsave(file='Figure6_phylosignal.pdf', plot=p4_test, width=7, height=5)
+
+## phylogeny with MSA
+
+ggsave(file='Figure6_MSA.pdf', plot=p6, width=7, height=5)
+
+```
+
+
+
+
+
