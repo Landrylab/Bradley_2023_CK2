@@ -1,0 +1,206 @@
+---
+title: "PP2A_PP1_mss"
+author: "David Bradley"
+date: '2024-02-06'
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+```{r}
+
+library(gdata)
+library(readxl)
+library(seqinr)
+library(stringr)
+library(tidyverse)
+
+# Load in the source data for the PWMs:
+
+pp2a_pp1_pwms <- read_xlsx('Source_Data.xlsx', skip=1, col_names=TRUE, sheet=10) %>% as.data.frame()
+
+# Function to replace NA values with the minimum value of the column
+
+replace_na_with_min <- function(column) {
+  min_value <- min(column, na.rm = TRUE)
+  return(ifelse(is.na(column), min_value, column))
+}
+
+# PP1
+
+pp1_pwm <- pp2a_pp1_pwms[3:21,]
+rownames(pp1_pwm) <- pp1_pwm[,1]
+pp1_pwm <- pp1_pwm[,-1]
+colnames(pp1_pwm) <- c(-5:+5)
+pp1_pwm <- apply(pp1_pwm, 2, replace_na_with_min) # Replace NA with column minimum (should have no effect on the results)
+
+# PP2A
+
+pp2a_pwm <- pp2a_pp1_pwms[25:44,]
+rownames(pp2a_pwm) <- pp2a_pwm[,1]
+pp2a_pwm <- pp2a_pwm[,-1]
+colnames(pp2a_pwm) <- c(-5:+5)
+pp2a_pwm <- apply(pp2a_pwm, 2, replace_na_with_min) # Replace NA with column minimum (should have no effect on the results)
+
+```
+
+## MSS scoring function
+
+```{r}
+
+mss_flank <- function(psite,pwm) {
+  
+  psite <- unlist(strsplit(psite,split=''))
+  pwm <- as.matrix(pwm)
+    
+  #match.ic = apply(pwm, 2, function(col) sum(col * logb(20 * col), na.rm=T))
+  
+  c=0
+  min=0
+  max = 0
+  
+  # Ignore p0
+  
+  for (i in c(1:5,7:11)) {
+    
+    aa <- psite[i]  
+    
+    # For missing amino acids, we score the '_' position
+    # the same as we would for a minimum frequency AA
+    
+    if (aa %in% c('_','X')) {
+      current <- min(pwm[,i])#*match.ic[i]
+    } else {
+      current <- pwm[rownames(pwm) %in% psite[i],i]#*match.ic[i]
+    }
+    
+    minimum <- min(pwm[,i])#*match.ic[i]
+    maximum <- max(pwm[,i])#*match.ic[i]
+    
+    c = c+current
+    min = min+minimum
+    max = max+maximum
+    
+  }
+  
+  mss = (c-min)/(max-min)
+  
+  #print(c)
+  #print(min)
+  #print(max)
+  #print(match.ic)
+  
+  return(unname(mss))
+  
+}
+
+# Sanity check PP1
+
+mss_flank('MFRTKSRKGYR',pp1_pwm)
+
+# Sanity check PP2A
+
+mss_flank('YFITQSVYVIF',pp2a_pwm)
+
+```
+
+## PP1 vs. CLIP1 S1684
+
+```{r}
+
+pp1_mss_wt <- mss_flank('LNNYDSDDQEK',pp1_pwm) # 0.17
+
+pp1_mss_mut1 <- mss_flank('LNNYASDAQEK',pp1_pwm) # 0.21
+
+pp1_mss_mut2 <- mss_flank('LNNYDSADQEK',pp1_pwm) # 0.264
+
+pp1_mss_mut3 <- mss_flank('DDNYDSDDQEK',pp1_pwm) # 0.123
+
+pp1_mss_mut4 <- mss_flank('LNNYDSDDEEK',pp1_pwm) # 0.154
+
+```
+
+## PP2A vs. CLIP1 S1684
+
+```{r}
+
+pp2a_mss_wt <- mss_flank('LNNYDSDDQEK',pp2a_pwm) # 0.196
+
+pp2a_mss_mut1 <- mss_flank('LNNYASDAQEK',pp2a_pwm) # 0.284
+
+pp2a_mss_mut2 <- mss_flank('LNNYDSADQEK',pp2a_pwm) # 0.316
+
+pp2a_mss_mut3 <- mss_flank('DDNYDSDDQEK',pp2a_pwm) # 0.15
+
+pp2a_mss_mut4 <- mss_flank('LNNYDSDDEEK',pp2a_pwm) # 0.178
+
+```
+
+## GGplot pp1
+
+```{r}
+
+# construct dataframe
+
+col1 <- c('WT', 'Mut1', 'Mut2', 'Mut3', 'Mut4')
+col2 <- c(pp1_mss_wt,  pp1_mss_mut1,  pp1_mss_mut2, pp1_mss_mut3, pp1_mss_mut4)
+
+df_pp1 <- data.frame('genotype' = col1, 'mss' = col2)  
+df_pp1$genotype <- factor(df_pp1$genotype, levels=c('WT','Mut1','Mut2','Mut3','Mut4'))
+
+# plot
+
+g <- ggplot(df_pp1, aes(x=genotype,y=mss,fill=genotype))+geom_bar(stat='identity',width=0.32)
+g <- g+coord_cartesian(ylim=c(0,0.35))
+g <- g+scale_fill_manual(values=rep("#E69F00",5))
+g <- g+xlab('')+ylab('Substrate quality')+ggtitle('PP1')
+g <- g+theme_bw()
+g <- g + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+g <- g+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=12,face='bold'))
+g <- g + theme(panel.border= element_blank())
+g <- g + theme(plot.title = element_text(hjust=0.5))
+
+ggsave(file='Figure_S9X_pp1.pdf', plot=g, width=3.5, height=2.8)
+
+
+```
+
+## GGplot pp2a
+
+```{r}
+
+# construct dataframe
+
+col1 <- c('WT', 'Mut1', 'Mut2', 'Mut3', 'Mut4')
+col2 <- c(pp2a_mss_wt,  pp2a_mss_mut1,  pp2a_mss_mut2, pp2a_mss_mut3, pp2a_mss_mut4)
+
+df_pp2a <- data.frame('genotype' = col1, 'mss' = col2)  
+df_pp2a$genotype <- factor(df_pp2a$genotype, levels=c('WT','Mut1','Mut2','Mut3','Mut4'))
+
+# plot
+
+g <- ggplot(df_pp2a, aes(x=genotype,y=mss,fill=genotype))+geom_bar(stat='identity',width=0.32)
+g <- g+coord_cartesian(ylim=c(0,0.35))
+g <- g+scale_fill_manual(values=rep("#56B4E9",5))
+g <- g+xlab('')+ylab('Substrate quality')+ggtitle('PP2A')
+g <- g+theme_bw()
+g <- g + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+g <- g+theme(axis.text=element_text(size=7),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=12,face='bold'))
+g <- g + theme(panel.border= element_blank())
+g <- g + theme(plot.title = element_text(hjust=0.5))
+
+ggsave(file='Figure_S9X_pp2a.pdf', plot=g, width=3.5, height=2.8)
+
+
+```
+
+
