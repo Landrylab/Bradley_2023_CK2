@@ -1,0 +1,79 @@
+---
+title: "CLIP1_S1364_promiscuity"
+author: "David Bradley"
+date: '2024-01-30'
+output: html_document
+---
+
+```{r}
+
+# https://stackoverflow.com/questions/27689222/changing-fonts-for-graphs-in-r
+
+library(extrafont)
+
+font_import()
+loadfonts()       #Register fonts for Windows bitmap output
+fonts() 
+
+```
+
+```{r}
+
+library(tidyverse)
+
+# The objective of this script is to determine the promiscuity for WT CLIP1 S1364 and its mutants
+# using the Cantley PWMs from Johnson et al., 2023
+
+# WT
+
+clip1_s1364_wt_cantley <- read_tsv('CLIP1_S1364_WT_cantley.tsv')
+clip1_s1364_wt_cantley_promiscuity <- clip1_s1364_wt_cantley %>% filter(site_percentile > 90) %>% nrow()
+
+# Mut 1
+
+clip1_s1364_mut1_cantley <- read_tsv('CLIP1_S1364_mut1_cantley.tsv')
+clip1_s1364_mut1_cantley_promiscuity <- clip1_s1364_mut1_cantley %>% filter(site_percentile > 90) %>% nrow()
+
+# Mut 2
+
+clip1_s1364_mut2_cantley <- read_tsv('CLIP1_S1364_mut2_cantley.tsv')
+clip1_s1364_mut2_cantley_promiscuity <- clip1_s1364_mut2_cantley %>% filter(site_percentile > 90) %>% nrow()
+
+# Mut 3
+
+clip1_s1364_mut3_cantley <- read_tsv('CLIP1_S1364_mut3_cantley.tsv')
+clip1_s1364_mut3_cantley_promiscuity <- clip1_s1364_mut3_cantley %>% filter(site_percentile > 90) %>% nrow()
+
+# Mut 4
+
+clip1_s1364_mut4_cantley <- read_tsv('CLIP1_S1364_mut4_cantley.tsv')
+clip1_s1364_mut4_cantley_promiscuity <- clip1_s1364_mut4_cantley %>% filter(site_percentile > 90) %>% nrow()
+
+# Construct data frame
+
+col1 <- c('WT', 'Mut1', 'Mut2', 'Mut3', 'Mut4')
+col2 <- c(clip1_s1364_wt_cantley_promiscuity,  clip1_s1364_mut1_cantley_promiscuity,  clip1_s1364_mut2_cantley_promiscuity, clip1_s1364_mut3_cantley_promiscuity, clip1_s1364_mut4_cantley_promiscuity)
+  
+df_promiscuity <- data.frame('genotype' = col1, 'promiscuity' = col2)  
+df_promiscuity$genotype <- factor(df_promiscuity$genotype, levels=c('WT','Mut1','Mut2','Mut3','Mut4'))
+
+```
+
+# Generate a ggplot of the data
+
+```{r}
+
+g <- ggplot(df_promiscuity, aes(x=genotype,y=promiscuity))+geom_bar(stat='identity',width=0.32)
+g <- #g+coord_cartesian(ylim=c(3.5,6.05))
+g <- g+xlab('')+ylab('Promiscuity index')+ggtitle('Substrate promiscuity')
+g <- g+theme_bw()
+g <- g + theme(text=element_text(family="Ubuntu Light", face="plain", size=15), panel.border = element_rect(color="black", size=1.2, linetype="solid"))+theme(legend.position="none")
+g <- g + theme(axis.text=element_text(size=7),axis.title.x=element_text(size=10,face="plain"),axis.title.y=element_text(size=11,face="plain"),plot.title=element_text(size=12,face='bold'))
+g <- g + theme(panel.border= element_blank())
+g <- g + theme(plot.title = element_text(hjust=0.5))
+
+ggsave(file='Figure_S9D.pdf', plot=g, width=3.5, height=2.8)
+
+```
+
+
